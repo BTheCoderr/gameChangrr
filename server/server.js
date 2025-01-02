@@ -256,6 +256,383 @@ app.get('/api/census/demographics', async (req, res) => {
   }
 });
 
+// EV Owners endpoints
+app.get('/api/ev-owners', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    // Fetch EV registration data from Mass Vehicle Registry API
+    const response = await axios.get('https://mass-api.example.com/ev-registrations', {
+      params: {
+        api_key: process.env.MASS_DATA_API_KEY,
+        bounds: `${minLat},${minLng},${maxLat},${maxLng}`
+      }
+    });
+
+    // Transform and return the data
+    const evOwners = response.data.map(record => ({
+      id: record.registration_id,
+      position: {
+        lat: record.latitude,
+        lng: record.longitude
+      },
+      make: record.vehicle_make,
+      model: record.vehicle_model,
+      year: record.vehicle_year
+    }));
+
+    res.json(evOwners);
+  } catch (error) {
+    console.error('Error fetching EV owners:', error);
+    res.status(500).json({ error: 'Failed to fetch EV owners data' });
+  }
+});
+
+app.get('/api/ev-statistics', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    // Fetch EV statistics from Mass Data Portal
+    const response = await axios.get('https://mass-api.example.com/ev-statistics', {
+      params: {
+        api_key: process.env.MASS_DATA_API_KEY,
+        bounds: `${minLat},${minLng},${maxLat},${maxLng}`
+      }
+    });
+
+    res.json({
+      totalEVs: response.data.total_evs,
+      percentageGrowth: response.data.year_over_year_growth,
+      popularModels: response.data.top_models,
+      chargingStations: response.data.nearby_stations
+    });
+  } catch (error) {
+    console.error('Error fetching EV statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch EV statistics' });
+  }
+});
+
+// Boundary endpoints
+app.get('/api/boundaries/cities', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    // Fetch city boundaries from Mass GIS
+    const response = await axios.get(
+      'https://maps.env.mass.gov/arcgisserver/rest/services/base/municipalities/MapServer/0/query',
+      {
+        params: {
+          f: 'geojson',
+          geometry: JSON.stringify({
+            xmin: minLng,
+            ymin: minLat,
+            xmax: maxLng,
+            ymax: maxLat,
+            spatialReference: { wkid: 4326 }
+          }),
+          geometryType: 'esriGeometryEnvelope',
+          spatialRel: 'esriSpatialRelIntersects',
+          outFields: '*',
+          returnGeometry: true
+        }
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching city boundaries:', error);
+    res.status(500).json({ error: 'Failed to fetch city boundaries' });
+  }
+});
+
+app.get('/api/boundaries/neighborhoods', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    console.log('Fetching neighborhoods for bounds:', { minLat, maxLat, minLng, maxLng });
+
+    // Validate input parameters
+    if (!minLat || !maxLat || !minLng || !maxLng) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters',
+        required: ['minLat', 'maxLat', 'minLng', 'maxLng']
+      });
+    }
+
+    // Construct Overpass QL query for neighborhoods
+    const overpassQuery = `
+      [out:json][timeout:25];
+      (
+        // Get neighborhoods and administrative boundaries
+        way["boundary"="administrative"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+        relation["boundary"="administrative"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+        // Get districts, suburbs, and neighborhoods
+        way["place"~"neighbourhood|suburb|district|quarter"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+        relation["place"~"neighbourhood|suburb|district|quarter"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+        // Get named areas
+        way["name"]["landuse"~"residential|commercial"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+      );
+      out body;
+      >;
+      out skel qt;
+    `;
+
+    console.log('Sending Overpass query:', overpassQuery);
+
+    // Fetch data from Overpass API
+    const response = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      overpassQuery,
+      {
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        timeout: 30000
+      }
+    );
+
+    console.log('Received response:', {
+      status: response.status,
+      elementCount: response.data?.elements?.length || 0
+    });
+
+    if (!response.data || !response.data.elements) {
+      console.warn('No neighborhood boundaries found in OpenStreetMap');
+      return res.json({
+        type: 'FeatureCollection',
+        features: []
+      });
+    }
+
+    // Transform OSM data to GeoJSON
+    const nodes = new Map();
+    const features = [];
+
+    // First, collect all nodes
+    response.data.elements
+      .filter(elem => elem.type === 'node')
+      .forEach(node => {
+        nodes.set(node.id, [node.lon, node.lat]);
+      });
+
+    console.log('Collected nodes:', nodes.size);
+
+    // Then process ways and relations
+    response.data.elements
+      .filter(elem => elem.type === 'way' || elem.type === 'relation')
+      .forEach(elem => {
+        if (elem.type === 'way' && elem.nodes && elem.tags) {
+          const coordinates = elem.nodes.map(nodeId => nodes.get(nodeId));
+          if (coordinates[0] && coordinates[coordinates.length - 1]) {
+            // Close the polygon if it's not closed
+            if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] ||
+                coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+              coordinates.push(coordinates[0]);
+            }
+            features.push({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [coordinates]
+              },
+              properties: {
+                name: elem.tags.name || elem.tags.place || 'Unnamed Area',
+                type: 'neighborhood',
+                source: 'OpenStreetMap',
+                population: 0,
+                median_income: 0,
+                tags: elem.tags // Include all tags for debugging
+              }
+            });
+          }
+        } else if (elem.type === 'relation' && elem.tags) {
+          // For relations, we need to process their members
+          const outerWays = response.data.elements
+            .filter(e => e.type === 'way' && elem.members?.some(m => m.type === 'way' && m.role === 'outer' && m.ref === e.id));
+          
+          if (outerWays.length > 0) {
+            // Process each outer way
+            outerWays.forEach(way => {
+              if (way.nodes) {
+                const coordinates = way.nodes.map(nodeId => nodes.get(nodeId));
+                if (coordinates[0] && coordinates[coordinates.length - 1]) {
+                  // Close the polygon if it's not closed
+                  if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] ||
+                      coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+                    coordinates.push(coordinates[0]);
+                  }
+                  features.push({
+                    type: 'Feature',
+                    geometry: {
+                      type: 'Polygon',
+                      coordinates: [coordinates]
+                    },
+                    properties: {
+                      name: elem.tags.name || elem.tags.place || 'Unnamed Area',
+                      type: 'neighborhood',
+                      source: 'OpenStreetMap',
+                      population: 0,
+                      median_income: 0,
+                      tags: elem.tags // Include all tags for debugging
+                    }
+                  });
+                }
+              }
+            });
+          }
+        }
+      });
+
+    console.log('Generated features:', features.length);
+
+    const result = {
+      type: 'FeatureCollection',
+      features: features
+    };
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching neighborhood boundaries:', error);
+    res.status(500).json({ error: 'Failed to fetch neighborhood boundaries' });
+  }
+});
+
+app.get('/api/boundaries/zipcodes', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    // Validate input parameters
+    if (!minLat || !maxLat || !minLng || !maxLng) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters',
+        required: ['minLat', 'maxLat', 'minLng', 'maxLng']
+      });
+    }
+
+    // Construct Overpass QL query for ZIP codes
+    const overpassQuery = `
+      [out:json][timeout:25];
+      (
+        // Get postal code areas
+        way["boundary"="postal_code"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+        relation["boundary"="postal_code"]
+          (${minLat},${minLng},${maxLat},${maxLng});
+      );
+      out body;
+      >;
+      out skel qt;
+    `;
+
+    // Fetch data from Overpass API
+    const response = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      overpassQuery,
+      {
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        timeout: 30000
+      }
+    );
+
+    if (!response.data || !response.data.elements) {
+      console.warn('No ZIP code boundaries found in OpenStreetMap');
+      return res.json({
+        type: 'FeatureCollection',
+        features: []
+      });
+    }
+
+    // Transform OSM data to GeoJSON
+    const nodes = new Map();
+    const features = [];
+
+    // First, collect all nodes
+    response.data.elements
+      .filter(elem => elem.type === 'node')
+      .forEach(node => {
+        nodes.set(node.id, [node.lon, node.lat]);
+      });
+
+    // Then process ways and relations
+    response.data.elements
+      .filter(elem => elem.type === 'way' || elem.type === 'relation')
+      .forEach(elem => {
+        if (elem.type === 'way' && elem.nodes) {
+          const coordinates = elem.nodes.map(nodeId => nodes.get(nodeId));
+          if (coordinates[0] && coordinates[coordinates.length - 1]) {
+            // Close the polygon if it's not closed
+            if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] ||
+                coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+              coordinates.push(coordinates[0]);
+            }
+            features.push({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [coordinates]
+              },
+              properties: {
+                zipcode: elem.tags.postal_code || elem.tags['addr:postcode'] || 'Unknown',
+                name: `${elem.tags.name || elem.tags.postal_code || 'Unknown ZIP'}`,
+                type: 'zipcode',
+                source: 'OpenStreetMap',
+                population: 0,
+                median_income: 0
+              }
+            });
+          }
+        }
+      });
+
+    res.json({
+      type: 'FeatureCollection',
+      features: features
+    });
+  } catch (error) {
+    console.error('Error fetching ZIP code boundaries:', error);
+    res.status(500).json({ error: 'Failed to fetch ZIP code boundaries' });
+  }
+});
+
+app.get('/api/boundaries/zoning', async (req, res) => {
+  try {
+    const { minLat, maxLat, minLng, maxLng } = req.query;
+    
+    // Fetch zoning boundaries from Mass GIS
+    const response = await axios.get(
+      'https://maps.env.mass.gov/arcgisserver/rest/services/zoning/zoningComposite/MapServer/0/query',
+      {
+        params: {
+          f: 'geojson',
+          geometry: JSON.stringify({
+            xmin: minLng,
+            ymin: minLat,
+            xmax: maxLng,
+            ymax: maxLat,
+            spatialReference: { wkid: 4326 }
+          }),
+          geometryType: 'esriGeometryEnvelope',
+          spatialRel: 'esriSpatialRelIntersects',
+          outFields: '*',
+          returnGeometry: true
+        }
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching zoning boundaries:', error);
+    res.status(500).json({ error: 'Failed to fetch zoning boundaries' });
+  }
+});
+
 // Root endpoint with HTML response
 app.get('/', (req, res) => {
   res.send(`

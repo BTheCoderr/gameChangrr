@@ -17,7 +17,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
   return (
     <Box sx={{ 
-      width: isOpen ? 240 : 0,
+      width: isOpen ? 240 : 60,
       height: '100vh',
       backgroundColor: 'white',
       borderRight: '1px solid rgba(0, 0, 0, 0.12)',
@@ -32,13 +32,19 @@ function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
         onClick={onToggle}
         sx={{
           position: 'absolute',
-          right: isOpen ? 8 : -40,
+          right: isOpen ? 8 : 8,
           top: 8,
           transition: 'right 0.3s ease',
           backgroundColor: 'white',
           border: '1px solid rgba(0, 0, 0, 0.12)',
+          boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
+          color: '#1976d2',
+          width: '32px',
+          height: '32px',
+          zIndex: 1300,
           '&:hover': {
-            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+            backgroundColor: 'rgba(25, 118, 210, 0.04)',
+            boxShadow: '0px 4px 8px rgba(0,0,0,0.1)'
           }
         }}
       >
@@ -46,29 +52,69 @@ function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
       </IconButton>
 
       {/* Navigation */}
-      <List>
-        <ListItem>
-          <ListItemIcon>
-            <GridViewIcon sx={{ color: '#1976d2', fontSize: 20 }} />
+      <List sx={{ mt: 5 }}>
+        <ListItem 
+          component="button"
+          onClick={() => window.location.href = '/'}
+          sx={{ 
+            border: 'none',
+            background: 'none',
+            width: '100%',
+            cursor: 'pointer',
+            '&:hover': {
+              backgroundColor: 'rgba(25, 118, 210, 0.04)'
+            }
+          }}
+        >
+          <ListItemIcon sx={{ 
+            minWidth: 40, 
+            color: '#1976d2',
+            display: 'flex',
+            justifyContent: 'center'
+          }}>
+            <GridViewIcon sx={{ fontSize: 20 }} />
           </ListItemIcon>
           <ListItemText 
-            primary={<Typography variant="body2">Dashboard</Typography>}
-            sx={{ color: 'rgba(0, 0, 0, 0.87)' }} 
+            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Dashboard</Typography>}
+            sx={{ 
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 0.3s ease'
+            }} 
           />
         </ListItem>
-        <ListItem>
-          <ListItemIcon>
-            <MapIcon sx={{ color: '#1976d2', fontSize: 20 }} />
+        <ListItem 
+          component="button"
+          onClick={() => window.location.href = '/map'}
+          sx={{ 
+            border: 'none',
+            background: 'none',
+            width: '100%',
+            cursor: 'pointer',
+            '&:hover': {
+              backgroundColor: 'rgba(25, 118, 210, 0.04)'
+            }
+          }}
+        >
+          <ListItemIcon sx={{ 
+            minWidth: 40, 
+            color: '#1976d2',
+            display: 'flex',
+            justifyContent: 'center'
+          }}>
+            <MapIcon sx={{ fontSize: 20 }} />
           </ListItemIcon>
           <ListItemText 
-            primary={<Typography variant="body2">Map</Typography>}
-            sx={{ color: 'rgba(0, 0, 0, 0.87)' }} 
+            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Map</Typography>}
+            sx={{ 
+              opacity: isOpen ? 1 : 0,
+              transition: 'opacity 0.3s ease'
+            }} 
           />
         </ListItem>
       </List>
 
       {/* Layers Section */}
-      <Typography variant="subtitle1" sx={{ px: 2, py: 1, color: 'rgba(0, 0, 0, 0.87)' }}>
+      <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: 'rgba(0, 0, 0, 0.87)' }}>
         Layers
       </Typography>
       <List>
@@ -88,8 +134,7 @@ function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
               <Icon sx={{ color, fontSize: 20 }} />
             </ListItemIcon>
             <ListItemText 
-              primary={<Typography variant="body2">{label}</Typography>}
-              sx={{ color: 'rgba(0, 0, 0, 0.87)' }} 
+              primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>{label}</Typography>}
             />
             <Switch
               edge="end"
@@ -105,8 +150,7 @@ function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
       <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', mt: 'auto' }}>
         <ListItem>
           <ListItemText 
-            primary={<Typography variant="body2">Use current aerial imagery</Typography>}
-            sx={{ color: 'rgba(0, 0, 0, 0.87)' }} 
+            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Use current aerial imagery</Typography>}
           />
           <Switch
             edge="end"

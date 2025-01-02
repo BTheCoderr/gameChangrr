@@ -1,12 +1,52 @@
 import { useCallback, useState, useEffect } from 'react';
-import { Box, ToggleButton, ToggleButtonGroup, InputAdornment, IconButton, Collapse, Paper, Typography } from '@mui/material';
-import { GoogleMap, useLoadScript, Autocomplete } from '@react-google-maps/api';
+import { 
+  Box, 
+  ToggleButton, 
+  ToggleButtonGroup, 
+  InputAdornment, 
+  IconButton, 
+  Collapse, 
+  Paper, 
+  Typography,
+  TextField
+} from '@mui/material';
+import { 
+  GoogleMap, 
+  useLoadScript, 
+  Autocomplete,
+  MarkerClusterer,
+  Marker,
+  InfoWindow
+} from '@react-google-maps/api';
 import PropTypes from 'prop-types';
-import TextField from '@mui/material/TextField';
 import SearchIcon from '@mui/icons-material/Search';
 import MapIcon from '@mui/icons-material/Map';
 import SatelliteIcon from '@mui/icons-material/Satellite';
 import CloseIcon from '@mui/icons-material/Close';
+import { 
+  fetchNeighborhoodBoundaries, 
+  fetchZipCodeBoundaries 
+} from '../services/boundaryService';
+
+// Constants
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const LIBRARIES = ['places', 'geometry'];
+const DEBOUNCE_DELAY = 1000; // 1 second delay
+
+console.log('Google Maps API Key loaded:', GOOGLE_MAPS_API_KEY ? 'Yes' : 'No');
+
+// Debounce function
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
 
 const mapContainerStyle = {
   width: '100%',
@@ -25,109 +65,42 @@ const options = {
   mapTypeId: 'satellite'
 };
 
-// Keep libraries constant to prevent reloads
-const libraries = ['places', 'geometry', 'drawing'];
-
-async function fetchNeighborhoodBoundary(map, placeName) {
-  const geocoder = new window.google.maps.Geocoder();
-  
-  try {
-    const response = await new Promise((resolve, reject) => {
-      geocoder.geocode({
-        address: placeName,
-        componentRestrictions: { country: 'US' }
-      }, (results, status) => {
-        if (status === 'OK') {
-          resolve(results);
-        } else {
-          reject(status);
-        }
-      });
-    });
-
-    if (response[0].geometry) {
-      const place = response[0];
-      
-      // Create a polygon to represent the neighborhood
-      const paths = await new Promise(resolve => {
-        const service = new window.google.maps.places.PlacesService(map);
-        service.getDetails({
-          placeId: place.place_id,
-          fields: ['geometry', 'name', 'formatted_address', 'types']
-        }, (result, status) => {
-          if (status === 'OK' && result.geometry && result.geometry.viewport) {
-            // Get the viewport corners
-            const ne = result.geometry.viewport.getNorthEast();
-            const sw = result.geometry.viewport.getSouthWest();
-            
-            // Create a more natural-looking boundary by adding intermediate points
-            const numPoints = 12;
-            const paths = [];
-            
-            for (let i = 0; i <= numPoints; i++) {
-              const lat = sw.lat() + (ne.lat() - sw.lat()) * (Math.sin(i * Math.PI / numPoints) + 1) / 2;
-              const lng = sw.lng() + (ne.lng() - sw.lng()) * (Math.cos(i * Math.PI / numPoints) + 1) / 2;
-              paths.push([lng, lat]);
-            }
-            
-            resolve(paths);
-          } else {
-            // Fallback to viewport bounds if detailed geometry isn't available
-            const ne = place.geometry.viewport.getNorthEast();
-            const sw = place.geometry.viewport.getSouthWest();
-            resolve([
-              [sw.lng(), ne.lat()],
-              [ne.lng(), ne.lat()],
-              [ne.lng(), sw.lat()],
-              [sw.lng(), sw.lat()],
-              [sw.lng(), ne.lat()]
-            ]);
-          }
-        });
-      });
-
-      // Create GeoJSON feature
-      const feature = {
-        type: 'Feature',
-        properties: {
-          name: place.address_components[0].long_name,
-          placeId: place.place_id,
-          // Add mock stats for now - these would come from your database or Census API
-          medianIncome: '$45,000',
-          homeownership: '65%',
-          avgHomeValue: '$275,000'
-        },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [paths]
-        }
-      };
-
-      // Add the feature to the map's data layer
-      map.data.addGeoJson({
-        type: 'FeatureCollection',
-        features: [feature]
-      });
-
-      return feature;
-    }
-  } catch (error) {
-    console.error('Error fetching neighborhood:', error);
-    return null;
+// Boundary styling configurations
+const boundaryStyles = {
+  block_group: {
+    strokeColor: '#FF9800',  // Orange
+    strokeOpacity: 0.8,
+    strokeWeight: 1.5,
+    fillColor: '#FF9800',
+    fillOpacity: 0.1,
+    zIndex: 1
+  },
+  zipcode: {
+    strokeColor: '#FF9800',  // Orange
+    strokeOpacity: 1,
+    strokeWeight: 2,
+    fillColor: '#FF9800',
+    fillOpacity: 0.05,
+    zIndex: 1
   }
-}
+};
 
 function Map({ activeLayers, onLayerToggle }) {
   const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: LIBRARIES
   });
 
   const [map, setMap] = useState(null);
-  const [autocomplete, setAutocomplete] = useState(null);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [mapType, setMapType] = useState('satellite');
+  const [searchValue, setSearchValue] = useState('');
+  const [markers, setMarkers] = useState([]);
+  const [boundaries, setBoundaries] = useState([]);
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [infoWindowPosition, setInfoWindowPosition] = useState(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [autocomplete, setAutocomplete] = useState(null);
+  const [lastBoundsUpdate, setLastBoundsUpdate] = useState(null);
 
   const onLoad = useCallback((map) => {
     setMap(map);
@@ -152,236 +125,373 @@ function Map({ activeLayers, onLayerToggle }) {
     }
   }, [autocomplete, map]);
 
-  // Load neighborhood boundaries when map is ready and layer is active
-  useEffect(() => {
-    if (!map || !activeLayers.neighborhoodInsights) return;
-
-    const loadNeighborhoods = async () => {
-      // Clear existing features
-      map.data.forEach(feature => map.data.remove(feature));
-
-      // List of neighborhoods to fetch
-      const neighborhoodsList = [
-        'Downtown Springfield, MA',
-        'Forest Park, Springfield, MA',
-        'Liberty Heights, Springfield, MA',
-        'Indian Orchard, Springfield, MA',
-        'East Springfield, MA',
-        'Pine Point, Springfield, MA',
-        'Sixteen Acres, Springfield, MA',
-        'South End, Springfield, MA',
-        'North End, Springfield, MA',
-        'East Forest Park, Springfield, MA'
-      ];
-
-      try {
-        await Promise.all(
-          neighborhoodsList.map(name => fetchNeighborhoodBoundary(map, name))
-        );
-
-        // Style the boundaries
-        map.data.setStyle({
-          fillColor: '#ED6C02',
-          fillOpacity: 0.1,
-          strokeColor: '#ED6C02',
-          strokeWeight: 2,
-          strokeOpacity: 0.8
-        });
-
-        // Add click listener for info windows
-        map.data.addListener('click', (event) => {
-          const feature = event.feature;
-          const bounds = new window.google.maps.LatLngBounds();
-          
-          feature.getGeometry().forEachLatLng(latLng => {
-            bounds.extend(latLng);
-          });
-          
-          setSelectedFeature({
-            name: feature.getProperty('name'),
-            stats: {
-              medianIncome: feature.getProperty('medianIncome'),
-              homeownership: feature.getProperty('homeownership'),
-              avgHomeValue: feature.getProperty('avgHomeValue')
-            }
-          });
-          setInfoWindowPosition(bounds.getCenter());
-        });
-
-        // Add hover effects
-        map.data.addListener('mouseover', (event) => {
-          map.data.overrideStyle(event.feature, {
-            fillOpacity: 0.3,
-            strokeWeight: 3
-          });
-        });
-
-        map.data.addListener('mouseout', (event) => {
-          map.data.revertStyle(event.feature);
-        });
-      } catch (error) {
-        console.error('Error loading neighborhoods:', error);
+  // Handle boundary click
+  const handleBoundaryClick = useCallback((feature) => {
+    setSelectedFeature({
+      name: feature.properties.name,
+      type: feature.properties.type,
+      stats: {
+        population: feature.properties.population,
+        medianIncome: feature.properties.medianIncome,
+        homeownership: feature.properties.homeownership,
+        avgHomeValue: feature.properties.avgHomeValue,
+        zoning: feature.properties.zoning
       }
-    };
+    });
+    
+    // Calculate center of boundary for info window
+    const bounds = new window.google.maps.LatLngBounds();
+    feature.geometry.coordinates[0].forEach(coord => {
+      bounds.extend(new window.google.maps.LatLng(coord[1], coord[0]));
+    });
+    setInfoWindowPosition(bounds.getCenter());
+  }, []);
 
-    loadNeighborhoods();
-  }, [map, activeLayers.neighborhoodInsights]);
+  // Create a debounced version of the boundary update function
+  const updateBoundaries = useCallback((map, activeLayers) => {
+    if (!map || !activeLayers) return;
 
-  // Update map type
-  useEffect(() => {
+    console.log('Updating boundaries...');
+    const bounds = map.getBounds();
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const zoom = map.getZoom();
+
+    // Only fetch if the bounds have changed significantly
+    const boundsChanged = !lastBoundsUpdate || 
+      Math.abs(lastBoundsUpdate.ne.lat - ne.lat()) > 0.001 ||
+      Math.abs(lastBoundsUpdate.ne.lng - ne.lng()) > 0.001;
+
+    if (!boundsChanged) {
+      console.log('Skipping update - bounds haven\'t changed significantly');
+      return;
+    }
+
+    setLastBoundsUpdate({
+      ne: { lat: ne.lat(), lng: ne.lng() },
+      sw: { lat: sw.lat(), lng: sw.lng() }
+    });
+
+    // Clear existing boundaries
+    setBoundaries(prevBoundaries => {
+      prevBoundaries.forEach(boundary => boundary.setMap(null));
+      return [];
+    });
+
+    if (activeLayers.neighborhoodInsights) {
+      const params = {
+        minLat: sw.lat(),
+        maxLat: ne.lat(),
+        minLng: sw.lng(),
+        maxLng: ne.lng()
+      };
+
+      if (zoom >= 12) {
+        fetchNeighborhoodBoundaries(params)
+          .then(data => {
+            if (data.features && data.features.length > 0) {
+              const newBoundaries = data.features.map(feature => {
+                if (!feature.geometry || !feature.geometry.coordinates) return null;
+
+                const coordinates = feature.geometry.coordinates[0].map(coord => ({
+                  lat: coord[1],
+                  lng: coord[0]
+                }));
+
+                const polygon = new window.google.maps.Polygon({
+                  paths: coordinates,
+                  ...boundaryStyles[feature.properties.type],
+                  clickable: true,
+                  zIndex: 1
+                });
+
+                polygon.addListener('click', () => handleBoundaryClick(feature));
+                polygon.setMap(map);
+
+                // Add hover effect
+                polygon.addListener('mouseover', () => {
+                  polygon.setOptions({
+                    strokeWeight: polygon.strokeWeight * 1.5,
+                    fillOpacity: polygon.fillOpacity * 2
+                  });
+                });
+
+                polygon.addListener('mouseout', () => {
+                  polygon.setOptions(boundaryStyles[feature.properties.type]);
+                });
+
+                return polygon;
+              }).filter(Boolean);
+
+              setBoundaries(prev => [...prev, ...newBoundaries]);
+            }
+          })
+          .catch(console.error);
+      } else {
+        fetchZipCodeBoundaries(params)
+          .then(data => {
+            if (data.features && data.features.length > 0) {
+              const newBoundaries = data.features.map(feature => {
+                if (!feature.geometry || !feature.geometry.coordinates) return null;
+
+                const coordinates = feature.geometry.coordinates[0].map(coord => ({
+                  lat: coord[1],
+                  lng: coord[0]
+                }));
+
+                const polygon = new window.google.maps.Polygon({
+                  paths: coordinates,
+                  ...boundaryStyles[feature.properties.type],
+                  clickable: true,
+                  zIndex: 1
+                });
+
+                polygon.addListener('click', () => handleBoundaryClick(feature));
+                polygon.setMap(map);
+
+                // Add hover effect
+                polygon.addListener('mouseover', () => {
+                  polygon.setOptions({
+                    strokeWeight: polygon.strokeWeight * 1.5,
+                    fillOpacity: polygon.fillOpacity * 2
+                  });
+                });
+
+                polygon.addListener('mouseout', () => {
+                  polygon.setOptions(boundaryStyles[feature.properties.type]);
+                });
+
+                return polygon;
+              }).filter(Boolean);
+
+              setBoundaries(prev => [...prev, ...newBoundaries]);
+            }
+          })
+          .catch(console.error);
+      }
+    }
+  }, [lastBoundsUpdate, handleBoundaryClick]);
+
+  const debouncedUpdateBoundaries = useCallback(
+    debounce(updateBoundaries, DEBOUNCE_DELAY),
+    [updateBoundaries]
+  );
+
+  const onBoundsChanged = useCallback(() => {
     if (!map) return;
-    map.setMapTypeId(activeLayers.aerial ? 'satellite' : 'roadmap');
-  }, [map, activeLayers.aerial]);
+    debouncedUpdateBoundaries(map, activeLayers);
+  }, [map, activeLayers, debouncedUpdateBoundaries]);
 
-  if (loadError) return <div>Error loading maps</div>;
-  if (!isLoaded) return <div>Loading maps...</div>;
+  // Update boundaries when map or layers change
+  useEffect(() => {
+    debouncedUpdateBoundaries(map, activeLayers);
+  }, [map, activeLayers, debouncedUpdateBoundaries]);
+
+  if (loadError) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100%',
+        p: 3
+      }}>
+        <Typography color="error">
+          Error loading maps: {loadError.message}
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100%'
+      }}>
+        <Typography>Loading maps...</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ position: 'relative', height: '100%', width: '100%', overflow: 'hidden' }}>
-      <Box sx={{ position: 'absolute', top: 20, left: 20, right: 20, zIndex: 1200 }}>
-        <Box sx={{ 
+      {/* Top Controls Bar */}
+      <Box 
+        sx={{ 
+          position: 'absolute', 
+          top: 20, 
+          left: 20, 
+          right: 20, 
+          zIndex: 1200,
           display: 'flex',
-          justifyContent: 'flex-end',
-          gap: 1
+          alignItems: 'center'
+        }}
+      >
+        <Paper sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          borderRadius: 1,
+          overflow: 'hidden'
         }}>
-          <Collapse in={isSearchOpen} orientation="horizontal" sx={{ flexGrow: 1 }}>
-            <Box sx={{ 
-              display: 'flex',
-              backgroundColor: 'white',
-              borderRadius: 1,
-              boxShadow: 1,
-              mr: 1
-            }}>
-              <Autocomplete
-                onLoad={onAutocompleteLoad}
-                onPlaceChanged={onPlaceChanged}
-                style={{ flex: 1 }}
-              >
-                <TextField
-                  fullWidth
-                  placeholder="Search locations..."
-                  variant="outlined"
-                  size="small"
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-              </Autocomplete>
-            </Box>
-          </Collapse>
-
+          {/* Search Box */}
           <Box sx={{ 
+            position: 'relative',
+            height: '40px',
             display: 'flex',
-            backgroundColor: 'white',
-            borderRadius: 1,
-            boxShadow: 1
+            alignItems: 'center',
+            borderRight: '1px solid rgba(0, 0, 0, 0.12)'
           }}>
-            {!isSearchOpen && (
-              <IconButton 
-                size="small" 
-                onClick={() => setIsSearchOpen(true)}
-                sx={{ mx: 0.5 }}
-              >
-                <SearchIcon />
-              </IconButton>
-            )}
-            {isSearchOpen && (
-              <IconButton 
-                size="small" 
-                onClick={() => setIsSearchOpen(false)}
-                sx={{ mx: 0.5 }}
-              >
-                <CloseIcon />
-              </IconButton>
-            )}
-            <ToggleButtonGroup
-              value={activeLayers.aerial ? 'satellite' : 'map'}
-              exclusive
-              onChange={(e, v) => v !== null && onLayerToggle('aerial')}
-              size="small"
+            <IconButton 
+              onClick={() => setIsSearchOpen(!isSearchOpen)}
               sx={{ 
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: 0,
-                  padding: '4px 12px',
-                  textTransform: 'none',
-                  '&.Mui-selected': {
-                    backgroundColor: '#1976d2',
-                    color: 'white',
-                    '&:hover': {
-                      backgroundColor: '#1565c0'
-                    }
-                  }
-                }
+                width: '40px', 
+                height: '40px',
+                borderRadius: 0,
+                color: 'primary.main'
               }}
             >
-              <ToggleButton value="map">
-                <MapIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="satellite">
-                <SatelliteIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
+              <SearchIcon sx={{ fontSize: '20px' }} />
+            </IconButton>
+            
+            <Collapse in={isSearchOpen} orientation="horizontal">
+              <Box sx={{
+                width: '260px',
+                height: '40px'
+              }}>
+                <Autocomplete 
+                  onLoad={onAutocompleteLoad} 
+                  onPlaceChanged={onPlaceChanged}
+                  style={{ width: '100%' }}
+                >
+                  <TextField
+                    size="small"
+                    fullWidth
+                    placeholder="Search location..."
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    InputProps={{
+                      endAdornment: searchValue && (
+                        <InputAdornment position="end">
+                          <IconButton 
+                            size="small" 
+                            onClick={() => {
+                              setSearchValue('');
+                              setIsSearchOpen(false);
+                            }}
+                          >
+                            <CloseIcon sx={{ fontSize: '20px' }} />
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                      sx: {
+                        height: '40px',
+                        '& input': {
+                          padding: '8px 14px'
+                        }
+                      }
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        '& fieldset': {
+                          border: 'none'
+                        }
+                      }
+                    }}
+                  />
+                </Autocomplete>
+              </Box>
+            </Collapse>
           </Box>
-        </Box>
+
+          {/* Map Type Toggle */}
+          <ToggleButtonGroup
+            value={mapType}
+            exclusive
+            onChange={(e, value) => value && setMapType(value)}
+            size="small"
+            sx={{
+              '& .MuiToggleButton-root': {
+                width: '40px',
+                height: '40px',
+                borderRadius: 0,
+                border: 'none',
+                borderLeft: '1px solid rgba(0, 0, 0, 0.12)',
+                color: 'primary.main',
+                '&.Mui-selected': {
+                  backgroundColor: 'primary.main',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: 'primary.dark'
+                  }
+                }
+              }
+            }}
+          >
+            <ToggleButton value="roadmap">
+              <MapIcon />
+            </ToggleButton>
+            <ToggleButton value="satellite">
+              <SatelliteIcon />
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Paper>
       </Box>
 
+      {/* Google Map */}
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
         center={center}
-        zoom={17}
-        options={options}
+        zoom={14}
+        options={{
+          ...options,
+          mapTypeId: mapType
+        }}
         onLoad={onLoad}
-      />
+        onBoundsChanged={onBoundsChanged}
+      >
+        {/* Map content */}
+      </GoogleMap>
 
-      {/* Info Window */}
+      {/* Feature Info Window */}
       {selectedFeature && infoWindowPosition && (
-        <Box
-          sx={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -100%)',
-            zIndex: 1000
-          }}
+        <InfoWindow
+          position={infoWindowPosition}
+          onCloseClick={() => setSelectedFeature(null)}
         >
-          <Paper
-            elevation={3}
-            sx={{
-              p: 2,
-              minWidth: 200,
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-              position: 'relative'
-            }}
-          >
-            <IconButton
-              size="small"
-              onClick={() => setSelectedFeature(null)}
-              sx={{
-                position: 'absolute',
-                right: 4,
-                top: 4
-              }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
-            <Typography variant="h6" gutterBottom>{selectedFeature.name}</Typography>
-            <Typography variant="body2">Median Income: {selectedFeature.stats.medianIncome}</Typography>
-            <Typography variant="body2">Homeownership: {selectedFeature.stats.homeownership}</Typography>
-            <Typography variant="body2">Avg Home Value: {selectedFeature.stats.avgHomeValue}</Typography>
-          </Paper>
-        </Box>
+          <Box>
+            <Typography variant="h6">{selectedFeature.name}</Typography>
+            <Typography>Type: {selectedFeature.type}</Typography>
+            {selectedFeature.stats && (
+              <>
+                <Typography>Population: {selectedFeature.stats.population}</Typography>
+                <Typography>Median Income: ${selectedFeature.stats.medianIncome}</Typography>
+                <Typography>Homeownership: {selectedFeature.stats.homeownership}%</Typography>
+                <Typography>Avg Home Value: ${selectedFeature.stats.avgHomeValue}</Typography>
+              </>
+            )}
+          </Box>
+        </InfoWindow>
       )}
     </Box>
   );
 }
 
 Map.propTypes = {
-  activeLayers: PropTypes.object.isRequired,
+  activeLayers: PropTypes.shape({
+    leads: PropTypes.bool,
+    neighborhoodInsights: PropTypes.bool,
+    utilityBoundaries: PropTypes.bool,
+    solarPermits: PropTypes.bool,
+    moveIns: PropTypes.bool,
+    cityBoundaries: PropTypes.bool,
+    manufacturedHomes: PropTypes.bool,
+    spanishSpeakers: PropTypes.bool,
+    evOwners: PropTypes.bool,
+    aerial: PropTypes.bool
+  }).isRequired,
   onLayerToggle: PropTypes.func.isRequired
 };
 

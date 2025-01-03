@@ -1,46 +1,94 @@
 import { Box } from '@mui/material'
-import PropTypes from 'prop-types'
 import { useState } from 'react'
-import Map from './Map'
+import LeafletMap from './LeafletMap'
 import Sidebar from './Sidebar'
 
-function MainLayout({ activeLayers, onLayerToggle }) {
+function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeLayers, setActiveLayers] = useState({
+    // Map Type
+    standardMap: true,
+    satelliteView: false,
+    // Solar Data
+    solarInstallations: false,
+    solarPotential: false,
+    propertyBoundaries: false,
+    solarPermits: false,
+    // Property Insights
+    neighborhoodInsights: false,
+    moveIns: false,
+    leads: false,
+    // Demographics & Boundaries
+    utilityBoundaries: false,
+    cityBoundaries: true,
+    // Additional Layers
+    spanishSpeakers: false,
+    manufacturedHomes: false,
+    evOwners: false,
+    useCurrentAerial: false
+  });
+
+  const handleLayerToggle = (layerId) => {
+    setActiveLayers(prev => {
+      // Handle map type toggles specially
+      if (layerId === 'standardMap' || layerId === 'satelliteView') {
+        return {
+          ...prev,
+          standardMap: layerId === 'standardMap',
+          satelliteView: layerId === 'satelliteView'
+        };
+      }
+      // Handle other layers
+      return {
+        ...prev,
+        [layerId]: !prev[layerId]
+      };
+    });
+  };
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      <Sidebar 
-        activeLayers={activeLayers} 
-        onLayerToggle={onLayerToggle}
-        isOpen={isSidebarOpen}
-        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-        sx={{
-          width: 240,
+    <Box sx={{ 
+      display: 'flex', 
+      height: '100vh',
+      width: '100vw',
+      overflow: 'hidden',
+      bgcolor: '#f5f5f5'
+    }}>
+      {/* Sidebar */}
+      <Box 
+        sx={{ 
+          width: isSidebarOpen ? 240 : 0,
+          height: '100%',
+          transition: 'width 0.3s ease',
           flexShrink: 0,
-          backgroundColor: '#262626',
-          borderRight: '1px solid rgba(255, 255, 255, 0.12)',
-          zIndex: 1200
+          bgcolor: 'white',
+          borderRight: '1px solid rgba(0,0,0,0.12)',
+          overflow: 'hidden'
         }}
-      />
-      <Box sx={{ 
-        flexGrow: 1, 
-        position: 'relative', 
-        height: '100%',
-        marginLeft: isSidebarOpen ? 0 : -240,
-        transition: 'margin-left 0.3s ease'
-      }}>
-        <Map 
+      >
+        <Sidebar 
+          isOpen={isSidebarOpen}
+          onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
           activeLayers={activeLayers}
-          onLayerToggle={onLayerToggle}
+          onLayerToggle={handleLayerToggle}
+        />
+      </Box>
+
+      {/* Map Container */}
+      <Box 
+        sx={{ 
+          flexGrow: 1,
+          height: '100%',
+          position: 'relative'
+        }}
+      >
+        <LeafletMap 
+          activeLayers={activeLayers}
+          onLayerToggle={handleLayerToggle}
         />
       </Box>
     </Box>
   )
-}
-
-MainLayout.propTypes = {
-  activeLayers: PropTypes.object.isRequired,
-  onLayerToggle: PropTypes.func.isRequired
 }
 
 export default MainLayout

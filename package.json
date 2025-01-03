@@ -13,7 +13,11 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "netlify-build": "npm install && vite build",
-    "heroku-postbuild": "cd server && npm install"
+    "heroku-postbuild": "cd server && npm install",
+    "fetch:boundaries": "node src/scripts/data-fetching/fetch-all.js",
+    "fetch:massgis": "node src/scripts/data-fetching/massgis-fetcher.js",
+    "fetch:census": "node src/scripts/data-fetching/census-fetcher.js",
+    "fetch:osm": "node src/scripts/data-fetching/osm-fetcher.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -23,6 +27,8 @@
     "@react-google-maps/api": "^2.20.5",
     "axios": "^1.7.9",
     "cheerio": "^1.0.0",
+    "leaflet": "^1.9.4",
+    "mapbox-gl": "^3.9.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.28.1"

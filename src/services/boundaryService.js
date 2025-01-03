@@ -1,44 +1,26 @@
-import axios from 'axios'
+import axios from 'axios';
+import cityBoundaries from '../data/ma-boundaries.json';
 
-export async function fetchNeighborhoodBoundaries({ minLat, maxLat, minLng, maxLng }) {
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+const MASSGIS_REST_ENDPOINT = 'https://gis-prod.digital.mass.gov/geoserver/wfs';
+
+// Fetch city boundaries for Massachusetts
+export const fetchCityBoundaries = async () => {
   try {
-    console.log('Fetching neighborhood boundaries for:', { minLat, maxLat, minLng, maxLng });
-    
-    // Build the bounding box string in the format expected by the API
-    const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
-    
-    const response = await axios.get('https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Census_Tract_Boundaries_2020/FeatureServer/0/query', {
-      params: {
-        where: '1=1',
-        outFields: '*',
-        geometry: bbox,
-        geometryType: 'esriGeometryEnvelope',
-        inSR: '4326',
-        outSR: '4326',
-        f: 'geojson'
-      }
-    });
-
-    console.log('Response status:', response.status);
-    console.log('Response data features:', response.data.features?.length || 0);
-
-    if (!response.data.features || response.data.features.length === 0) {
-      console.log('No features found in the response');
-      return { type: 'FeatureCollection', features: [] };
+    if (!cityBoundaries || !cityBoundaries.cities) {
+      throw new Error('Invalid city boundaries data');
     }
-
-    const features = response.data.features.map(feature => ({
-      ...feature,
+    
+    // Transform the data into GeoJSON format
+    const features = cityBoundaries.cities.map(city => ({
+      type: 'Feature',
       properties: {
-        ...feature.properties,
-        name: `Census Tract ${feature.properties.TRACTCE || 'Unknown'}`,
-        type: 'block_group',
-        source: 'Census Bureau',
-        population: feature.properties.POP100 || 0,
-        median_income: 0,
-        homeownership: 0,
-        avgHomeValue: 0
-      }
+        name: city.name,
+        type: 'city',
+        population: city.metadata?.population,
+        region: city.metadata?.region
+      },
+      geometry: city.boundaries
     }));
 
     return {
@@ -46,55 +28,47 @@ export async function fetchNeighborhoodBoundaries({ minLat, maxLat, minLng, maxL
       features
     };
   } catch (error) {
-    console.error('Error fetching neighborhood boundaries:', error);
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
-    throw error;
+    console.error('Error in fetchCityBoundaries:', error);
+    return {
+      type: 'FeatureCollection',
+      features: []
+    };
   }
-}
+};
 
-export async function fetchZipCodeBoundaries({ minLat, maxLat, minLng, maxLng }) {
+// Fetch neighborhood boundaries
+export const fetchNeighborhoodBoundaries = async (cityName = 'Springfield') => {
   try {
-    console.log('Fetching ZIP code boundaries for:', { minLat, maxLat, minLng, maxLng });
-    
-    // Build the bounding box string in the format expected by the API
-    const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
-    
-    const response = await axios.get('https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_ZIP_Code_Boundaries_2020/FeatureServer/0/query', {
-      params: {
-        where: '1=1',
-        outFields: '*',
-        geometry: bbox,
-        geometryType: 'esriGeometryEnvelope',
-        inSR: '4326',
-        outSR: '4326',
-        f: 'geojson'
-      }
-    });
+    // MassGIS WFS parameters for neighborhood boundaries
+    const params = {
+      service: 'WFS',
+      version: '2.0.0',
+      request: 'GetFeature',
+      typeName: 'massgis:GISDATA.NEIGHBORHOODS_POLY',
+      outputFormat: 'application/json',
+      srsName: 'EPSG:4326',
+      cql_filter: `CITY='${cityName.toUpperCase()}'`
+    };
 
-    console.log('Response status:', response.status);
-    console.log('Response data features:', response.data.features?.length || 0);
+    console.log('Fetching neighborhood data for', cityName);
+    const queryString = new URLSearchParams(params).toString();
+    const response = await axios.get(`${MASSGIS_REST_ENDPOINT}?${queryString}`);
 
-    if (!response.data.features || response.data.features.length === 0) {
-      console.log('No features found in the response');
-      return { type: 'FeatureCollection', features: [] };
+    if (!response.data || !response.data.features) {
+      throw new Error('Invalid response from MassGIS');
     }
 
+    // Transform the data into our GeoJSON format
     const features = response.data.features.map(feature => ({
-      ...feature,
+      type: 'Feature',
       properties: {
-        ...feature.properties,
-        name: `ZIP Code ${feature.properties.ZCTA5CE20 || 'Unknown'}`,
-        type: 'zipcode',
-        source: 'Census Bureau',
-        population: feature.properties.POP100 || 0,
-        median_income: 0,
-        homeownership: 0,
-        avgHomeValue: 0
-      }
+        name: feature.properties.name || feature.properties.NAME || 'Unknown Neighborhood',
+        type: 'neighborhood',
+        city: cityName,
+        population: feature.properties.population || null,
+        area: feature.properties.shape_area || null
+      },
+      geometry: feature.geometry
     }));
 
     return {
@@ -102,12 +76,39 @@ export async function fetchZipCodeBoundaries({ minLat, maxLat, minLng, maxLng })
       features
     };
   } catch (error) {
-    console.error('Error fetching ZIP code boundaries:', error);
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
-    throw error;
+    console.error('Error in fetchNeighborhoodBoundaries:', error);
+    // Return empty feature collection on error
+    return {
+      type: 'FeatureCollection',
+      features: []
+    };
   }
-} 
+};
+
+// Style configurations for different boundary types
+export const getBoundaryStyle = (type, isHighlighted = false) => {
+  const styles = {
+    city: {
+      color: isHighlighted ? '#FFA500' : '#666',
+      weight: 2,
+      opacity: 1,
+      fillColor: isHighlighted ? '#FFA500' : '#666',
+      fillOpacity: isHighlighted ? 0.35 : 0.1
+    },
+    neighborhood: {
+      color: '#4ECDC4',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.1,
+      dashArray: '3'
+    },
+    default: {
+      color: '#666',
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.1
+    }
+  };
+
+  return styles[type] || styles.default;
+};

@@ -1,174 +1,271 @@
-import { Box, List, ListItem, ListItemIcon, ListItemText, Switch, Typography, IconButton } from '@mui/material';
-import PropTypes from 'prop-types';
-import GridViewIcon from '@mui/icons-material/GridView';
+import { 
+  Box, 
+  List, 
+  ListItem, 
+  ListItemIcon, 
+  ListItemText,
+  Typography,
+  Switch,
+  Divider,
+  IconButton
+} from '@mui/material';
 import MapIcon from '@mui/icons-material/Map';
-import PersonIcon from '@mui/icons-material/Person';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import BusinessIcon from '@mui/icons-material/Business';
+import SatelliteAltIcon from '@mui/icons-material/SatelliteAlt';
 import WbSunnyIcon from '@mui/icons-material/WbSunny';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
 import HomeIcon from '@mui/icons-material/Home';
+import DescriptionIcon from '@mui/icons-material/Description';
+import BusinessIcon from '@mui/icons-material/Business';
+import PersonIcon from '@mui/icons-material/Person';
+import ApartmentIcon from '@mui/icons-material/Apartment';
 import LocationCityIcon from '@mui/icons-material/LocationCity';
-import RvHookupIcon from '@mui/icons-material/RvHookup';
-import TranslateIcon from '@mui/icons-material/Translate';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import MenuIcon from '@mui/icons-material/Menu';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import LanguageIcon from '@mui/icons-material/Language';
+import HouseIcon from '@mui/icons-material/House';
+import ElectricCarIcon from '@mui/icons-material/ElectricCar';
+import WbSunnyOutlinedIcon from '@mui/icons-material/WbSunnyOutlined';
 
-function Sidebar({ activeLayers, onLayerToggle, isOpen, onToggle }) {
+function Sidebar({ isOpen, onToggle, activeLayers, onLayerToggle }) {
   return (
     <Box sx={{ 
-      width: isOpen ? 240 : 60,
-      height: '100vh',
-      backgroundColor: 'white',
-      borderRight: '1px solid rgba(0, 0, 0, 0.12)',
+      height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      transition: 'width 0.3s ease',
-      position: 'relative',
-      overflow: 'hidden'
+      bgcolor: 'white',
+      overflow: 'auto',
+      position: 'relative'
     }}>
       {/* Toggle Button */}
       <IconButton
         onClick={onToggle}
         sx={{
           position: 'absolute',
-          right: isOpen ? 8 : 8,
+          right: 8,
           top: 8,
-          transition: 'right 0.3s ease',
-          backgroundColor: 'white',
-          border: '1px solid rgba(0, 0, 0, 0.12)',
-          boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
-          color: '#1976d2',
-          width: '32px',
-          height: '32px',
-          zIndex: 1300,
-          '&:hover': {
-            backgroundColor: 'rgba(25, 118, 210, 0.04)',
-            boxShadow: '0px 4px 8px rgba(0,0,0,0.1)'
-          }
+          zIndex: 1
         }}
       >
         {isOpen ? <ChevronLeftIcon /> : <MenuIcon />}
       </IconButton>
 
-      {/* Navigation */}
-      <List sx={{ mt: 5 }}>
-        <ListItem 
-          component="button"
-          onClick={() => window.location.href = '/'}
-          sx={{ 
-            border: 'none',
-            background: 'none',
-            width: '100%',
-            cursor: 'pointer',
-            '&:hover': {
-              backgroundColor: 'rgba(25, 118, 210, 0.04)'
-            }
-          }}
-        >
-          <ListItemIcon sx={{ 
-            minWidth: 40, 
-            color: '#1976d2',
-            display: 'flex',
-            justifyContent: 'center'
-          }}>
-            <GridViewIcon sx={{ fontSize: 20 }} />
-          </ListItemIcon>
-          <ListItemText 
-            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Dashboard</Typography>}
-            sx={{ 
-              opacity: isOpen ? 1 : 0,
-              transition: 'opacity 0.3s ease'
-            }} 
-          />
-        </ListItem>
-        <ListItem 
-          component="button"
-          onClick={() => window.location.href = '/map'}
-          sx={{ 
-            border: 'none',
-            background: 'none',
-            width: '100%',
-            cursor: 'pointer',
-            '&:hover': {
-              backgroundColor: 'rgba(25, 118, 210, 0.04)'
-            }
-          }}
-        >
-          <ListItemIcon sx={{ 
-            minWidth: 40, 
-            color: '#1976d2',
-            display: 'flex',
-            justifyContent: 'center'
-          }}>
-            <MapIcon sx={{ fontSize: 20 }} />
-          </ListItemIcon>
-          <ListItemText 
-            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Map</Typography>}
-            sx={{ 
-              opacity: isOpen ? 1 : 0,
-              transition: 'opacity 0.3s ease'
-            }} 
-          />
-        </ListItem>
-      </List>
-
-      {/* Layers Section */}
-      <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: 'rgba(0, 0, 0, 0.87)' }}>
-        Layers
-      </Typography>
-      <List>
-        {[
-          { icon: PersonIcon, label: 'Leads', id: 'leads', color: '#FFD700' },
-          { icon: TrendingUpIcon, label: 'Neighborhood Insights', id: 'neighborhoodInsights', color: '#2196F3' },
-          { icon: BusinessIcon, label: 'Utility Boundaries', id: 'utilityBoundaries', color: '#1976d2' },
-          { icon: WbSunnyIcon, label: 'Solar Permits', id: 'solarPermits', color: '#4CAF50' },
-          { icon: HomeIcon, label: 'Move Ins', id: 'moveIns', color: '#2196F3' },
-          { icon: LocationCityIcon, label: 'City Boundaries', id: 'cityBoundaries', color: '#2196F3' },
-          { icon: RvHookupIcon, label: 'Manufactured Homes', id: 'manufacturedHomes', color: '#2196F3' },
-          { icon: TranslateIcon, label: 'Spanish Speakers', id: 'spanishSpeakers', color: '#2196F3' },
-          { icon: DirectionsCarIcon, label: 'EV Owners', id: 'evOwners', color: '#2196F3' }
-        ].map(({ icon: Icon, label, id, color }) => (
-          <ListItem key={id}>
-            <ListItemIcon>
-              <Icon sx={{ color, fontSize: 20 }} />
+      {/* Map Type Section */}
+      <Box sx={{ p: 2, pt: 6 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+          Map Type
+        </Typography>
+        <List disablePadding>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <MapIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText 
-              primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>{label}</Typography>}
-            />
-            <Switch
-              edge="end"
-              size="small"
-              checked={activeLayers[id] || false}
-              onChange={() => onLayerToggle(id)}
+            <ListItemText primary="Standard Map" />
+            <Switch 
+              size="small" 
+              checked={activeLayers.standardMap}
+              onChange={() => onLayerToggle('standardMap')}
             />
           </ListItem>
-        ))}
-      </List>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <SatelliteAltIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Satellite View" />
+            <Switch 
+              size="small"
+              checked={activeLayers.satelliteView}
+              onChange={() => onLayerToggle('satelliteView')}
+            />
+          </ListItem>
+        </List>
+      </Box>
+
+      <Divider />
+
+      {/* Solar Data Section */}
+      <Box sx={{ p: 2 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+          Solar Data
+        </Typography>
+        <List disablePadding>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <WbSunnyIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Solar Installations" />
+            <Switch 
+              size="small"
+              checked={activeLayers.solarInstallations}
+              onChange={() => onLayerToggle('solarInstallations')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <ShowChartIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Solar Potential" />
+            <Switch 
+              size="small"
+              checked={activeLayers.solarPotential}
+              onChange={() => onLayerToggle('solarPotential')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <HomeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Property Boundaries" />
+            <Switch 
+              size="small"
+              checked={activeLayers.propertyBoundaries}
+              onChange={() => onLayerToggle('propertyBoundaries')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <DescriptionIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Solar Permits" />
+            <Switch 
+              size="small"
+              checked={activeLayers.solarPermits}
+              onChange={() => onLayerToggle('solarPermits')}
+            />
+          </ListItem>
+        </List>
+      </Box>
+
+      <Divider />
+
+      {/* Property Insights Section */}
+      <Box sx={{ p: 2 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+          Property Insights
+        </Typography>
+        <List disablePadding>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <BusinessIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Neighborhood Insights" />
+            <Switch 
+              size="small"
+              checked={activeLayers.neighborhoodInsights}
+              onChange={() => onLayerToggle('neighborhoodInsights')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <HomeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Move Ins" />
+            <Switch 
+              size="small"
+              checked={activeLayers.moveIns}
+              onChange={() => onLayerToggle('moveIns')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <PersonIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Leads" />
+            <Switch 
+              size="small"
+              checked={activeLayers.leads}
+              onChange={() => onLayerToggle('leads')}
+            />
+          </ListItem>
+        </List>
+      </Box>
+
+      <Divider />
+
+      {/* Demographics & Boundaries Section */}
+      <Box sx={{ p: 2 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+          Demographics & Boundaries
+        </Typography>
+        <List disablePadding>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <ApartmentIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Utility Boundaries" />
+            <Switch 
+              size="small"
+              checked={activeLayers.utilityBoundaries}
+              onChange={() => onLayerToggle('utilityBoundaries')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <LocationCityIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="City Boundaries" />
+            <Switch 
+              size="small"
+              checked={activeLayers.cityBoundaries}
+              onChange={() => onLayerToggle('cityBoundaries')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <LanguageIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Spanish Speakers" />
+            <Switch 
+              size="small"
+              checked={activeLayers.spanishSpeakers}
+              onChange={() => onLayerToggle('spanishSpeakers')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <HouseIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Manufactured Homes" />
+            <Switch 
+              size="small"
+              checked={activeLayers.manufacturedHomes}
+              onChange={() => onLayerToggle('manufacturedHomes')}
+            />
+          </ListItem>
+          <ListItem dense>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <ElectricCarIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="EV Owners" />
+            <Switch 
+              size="small"
+              checked={activeLayers.evOwners}
+              onChange={() => onLayerToggle('evOwners')}
+            />
+          </ListItem>
+        </List>
+      </Box>
 
       {/* Aerial Imagery Toggle */}
-      <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', mt: 'auto' }}>
-        <ListItem>
-          <ListItemText 
-            primary={<Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.87)' }}>Use current aerial imagery</Typography>}
-          />
-          <Switch
-            edge="end"
-            size="small"
-            checked={activeLayers.aerial || false}
-            onChange={() => onLayerToggle('aerial')}
-          />
-        </ListItem>
+      <Box sx={{ 
+        p: 2, 
+        mt: 'auto',
+        borderTop: '1px solid rgba(0,0,0,0.12)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1
+      }}>
+        <WbSunnyOutlinedIcon fontSize="small" sx={{ opacity: 0.7 }} />
+        <Typography variant="body2" sx={{ flexGrow: 1 }}>
+          Use current aerial imagery
+        </Typography>
+        <Switch 
+          size="small"
+          checked={activeLayers.useCurrentAerial}
+          onChange={() => onLayerToggle('useCurrentAerial')}
+        />
       </Box>
     </Box>
   );
 }
-
-Sidebar.propTypes = {
-  activeLayers: PropTypes.object.isRequired,
-  onLayerToggle: PropTypes.func.isRequired,
-  isOpen: PropTypes.bool.isRequired,
-  onToggle: PropTypes.func.isRequired
-};
 
 export default Sidebar; 

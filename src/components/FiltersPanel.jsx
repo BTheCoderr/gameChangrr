@@ -8,6 +8,7 @@ import {
   Checkbox,
   IconButton,
   Tooltip,
+  Divider
 } from '@mui/material'
 import FilterListIcon from '@mui/icons-material/FilterList'
 import CloseIcon from '@mui/icons-material/Close'
@@ -20,32 +21,65 @@ import LocationCityIcon from '@mui/icons-material/LocationCity'
 import TranslateIcon from '@mui/icons-material/Translate'
 import ElectricCarIcon from '@mui/icons-material/ElectricCar'
 import HomeWorkIcon from '@mui/icons-material/HomeWork'
+import MapIcon from '@mui/icons-material/Map'
+import SatelliteIcon from '@mui/icons-material/Satellite'
+import WbSunnyIcon from '@mui/icons-material/WbSunny'
+import ApartmentIcon from '@mui/icons-material/Apartment'
 
 const layerStyles = {
-  leads: {
-    color: '#4A90E2',
-    icon: LocationOnIcon,
-    description: 'View potential solar leads'
-  },
-  neighborhoodInsights: {
-    color: '#ED6C02',
-    icon: TerrainIcon,
-    description: 'View demographic and housing data'
-  },
-  utilityBoundaries: {
+  // Map Type
+  standardMap: {
     color: '#1976D2',
-    icon: BusinessIcon,
-    description: 'Show utility service areas'
+    icon: MapIcon,
+    description: 'Standard street map view'
+  },
+  satelliteView: {
+    color: '#1976D2',
+    icon: SatelliteIcon,
+    description: 'Satellite imagery view'
+  },
+  // Solar Data
+  solarInstallations: {
+    color: '#FFC107',
+    icon: SolarPowerIcon,
+    description: 'View existing solar installations'
+  },
+  solarPotential: {
+    color: '#FF9800',
+    icon: WbSunnyIcon,
+    description: 'View solar potential areas'
+  },
+  propertyBoundaries: {
+    color: '#4CAF50',
+    icon: ApartmentIcon,
+    description: 'View property boundaries'
   },
   solarPermits: {
     color: '#FFC107',
     icon: SolarPowerIcon,
     description: 'View solar permit applications'
   },
+  // Property Insights
+  neighborhoodInsights: {
+    color: '#ED6C02',
+    icon: TerrainIcon,
+    description: 'View demographic and housing data'
+  },
   moveIns: {
     color: '#4CAF50',
     icon: HomeIcon,
     description: 'View recent move-ins'
+  },
+  leads: {
+    color: '#4A90E2',
+    icon: LocationOnIcon,
+    description: 'View potential solar leads'
+  },
+  // Demographics & Boundaries
+  utilityBoundaries: {
+    color: '#1976D2',
+    icon: BusinessIcon,
+    description: 'Show utility service areas'
   },
   cityBoundaries: {
     color: '#2E7D32',
@@ -61,13 +95,27 @@ const layerStyles = {
     color: '#FF5722',
     icon: TranslateIcon,
     description: 'View Spanish-speaking households'
-  },
-  evOwners: {
-    color: '#00BCD4',
-    icon: ElectricCarIcon,
-    description: 'View electric vehicle owners'
   }
 };
+
+const categories = [
+  {
+    title: 'Map Type',
+    layers: ['standardMap', 'satelliteView']
+  },
+  {
+    title: 'Solar Data',
+    layers: ['solarInstallations', 'solarPotential', 'propertyBoundaries', 'solarPermits']
+  },
+  {
+    title: 'Property Insights',
+    layers: ['neighborhoodInsights', 'moveIns', 'leads']
+  },
+  {
+    title: 'Demographics & Boundaries',
+    layers: ['utilityBoundaries', 'cityBoundaries', 'manufacturedHomes', 'spanishSpeakers']
+  }
+];
 
 function FiltersPanel({ activeLayers, onLayersChange }) {
   const [open, setOpen] = useState(false);
@@ -101,8 +149,10 @@ function FiltersPanel({ activeLayers, onLayersChange }) {
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <style.icon sx={{ color: style.color, mr: 1 }} />
               <Box>
-                <Typography variant="body2">{label}</Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="body2" sx={{ color: '#000' }}>
+                  {label || layer.replace(/([A-Z])/g, ' $1').trim()}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(0, 0, 0, 0.6)' }}>
                   {style.description}
                 </Typography>
               </Box>
@@ -149,48 +199,43 @@ function FiltersPanel({ activeLayers, onLayersChange }) {
         maxHeight: 'calc(100vh - 40px)',
         overflow: 'auto',
         zIndex: 1000,
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(10px)'
+        backgroundColor: '#fff',
+        boxShadow: '0px 2px 4px rgba(0,0,0,0.2)'
       }}
     >
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h6">Layers</Typography>
+      <Box sx={{ 
+        p: 2, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        borderBottom: '1px solid rgba(0, 0, 0, 0.12)'
+      }}>
+        <Typography variant="h6" sx={{ color: '#000' }}>Layers</Typography>
         <IconButton onClick={() => setOpen(false)} size="small">
           <CloseIcon />
         </IconButton>
       </Box>
 
-      <Box sx={{ p: 2 }}>
-        <LayerToggle layer="leads" label="Leads" />
-        <LayerToggle layer="neighborhoodInsights" label="Neighborhood Insights" />
-        <LayerToggle layer="utilityBoundaries" label="Utility Boundaries" />
-        <LayerToggle layer="solarPermits" label="Solar Permits" />
-        <LayerToggle layer="moveIns" label="Move Ins" />
-        <LayerToggle layer="cityBoundaries" label="City Boundaries" />
-        <LayerToggle layer="manufacturedHomes" label="Manufactured Homes" />
-        <LayerToggle layer="spanishSpeakers" label="Spanish Speakers" />
-        <LayerToggle layer="evOwners" label="EV Owners" />
-      </Box>
-
-      {/* Map Type Toggle */}
-      <Box sx={{ p: 2, pt: 0 }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={activeLayers.aerial}
-              onChange={handleLayerChange('aerial')}
-            />
-          }
-          label={
-            <Box>
-              <Typography variant="body2">Use current aerial imagery</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Toggle between aerial and map view
-              </Typography>
-            </Box>
-          }
-        />
-      </Box>
+      {categories.map((category, index) => (
+        <React.Fragment key={category.title}>
+          {index > 0 && <Divider />}
+          <Box sx={{ px: 2, py: 1, backgroundColor: '#fff' }}>
+            <Typography 
+              variant="subtitle1" 
+              sx={{ 
+                mb: 1, 
+                fontWeight: 500,
+                color: '#000'
+              }}
+            >
+              {category.title}
+            </Typography>
+            {category.layers.map(layer => (
+              <LayerToggle key={layer} layer={layer} />
+            ))}
+          </Box>
+        </React.Fragment>
+      ))}
     </Paper>
   );
 }

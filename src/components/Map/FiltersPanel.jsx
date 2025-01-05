@@ -1,23 +1,21 @@
 import React from 'react';
 import './FiltersPanel.css';
 
-const FiltersPanel = ({ visible, filters, onFilterChange, onClose }) => {
-  if (!visible) return null;
-
+const FiltersPanel = ({ visible, filters, onFiltersChange, onClose }) => {
   const handlePropertyTypeChange = (type) => {
-    onFilterChange({ ...filters, propertyType: type });
+    onFiltersChange({ ...filters, propertyType: type });
   };
 
   const handlePriceRangeChange = (value, index) => {
     const newRange = [...filters.priceRange];
     newRange[index] = parseInt(value) || 0;
-    onFilterChange({ ...filters, priceRange: newRange });
+    onFiltersChange({ ...filters, priceRange: newRange });
   };
 
   const handleYearBuiltChange = (value, index) => {
     const newRange = [...filters.yearBuilt];
     newRange[index] = parseInt(value) || 0;
-    onFilterChange({ ...filters, yearBuilt: newRange });
+    onFiltersChange({ ...filters, yearBuilt: newRange });
   };
 
   // Format price for display
@@ -31,12 +29,7 @@ const FiltersPanel = ({ visible, filters, onFilterChange, onClose }) => {
   };
 
   return (
-    <div className="filters-panel">
-      <div className="panel-header">
-        <h2>Filters</h2>
-        <button className="close-button" onClick={onClose}>×</button>
-      </div>
-
+    <>
       <div className="filter-section">
         <h3>Property Type</h3>
         <div className="button-group">
@@ -117,8 +110,8 @@ const FiltersPanel = ({ visible, filters, onFilterChange, onClose }) => {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
-}
+};
 
 export default FiltersPanel; 

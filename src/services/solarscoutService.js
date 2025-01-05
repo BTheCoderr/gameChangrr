@@ -283,4 +283,86 @@ const generateMockSolarInstallations = (bounds, filters) => {
     type: 'FeatureCollection',
     features
   };
+};
+
+export const fetchUtilityBoundaries = async (bounds) => {
+  try {
+    const [west, south, east, north] = bounds;
+    const response = await fetch(
+      `${API_CONFIG.SOLARSCOUT_API}/utility-boundaries?bounds=${west},${south},${east},${north}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${API_CONFIG.SOLARSCOUT_API_KEY}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch utility boundaries');
+    }
+
+    const data = await response.json();
+    return {
+      type: 'FeatureCollection',
+      features: data.map(boundary => ({
+        type: 'Feature',
+        id: boundary.id,
+        geometry: boundary.geometry,
+        properties: {
+          name: boundary.name,
+          type: boundary.type,
+          provider: boundary.provider
+        }
+      }))
+    };
+  } catch (error) {
+    console.error('Error fetching utility boundaries:', error);
+    return {
+      type: 'FeatureCollection',
+      features: []
+    };
+  }
+};
+
+export const fetchEVStations = async (bounds) => {
+  try {
+    const [west, south, east, north] = bounds;
+    const response = await fetch(
+      `${API_CONFIG.SOLARSCOUT_API}/ev-stations?bounds=${west},${south},${east},${north}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${API_CONFIG.SOLARSCOUT_API_KEY}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch EV stations');
+    }
+
+    const data = await response.json();
+    return {
+      type: 'FeatureCollection',
+      features: data.map(station => ({
+        type: 'Feature',
+        id: station.id,
+        geometry: station.geometry,
+        properties: {
+          name: station.name,
+          address: station.address,
+          connectorTypes: station.connectorTypes,
+          chargingLevel: station.chargingLevel,
+          networkOperator: station.networkOperator,
+          status: station.status,
+          pricing: station.pricing
+        }
+      }))
+    };
+  } catch (error) {
+    console.error('Error fetching EV stations:', error);
+    return {
+      type: 'FeatureCollection',
+      features: []
+    };
+  }
 }; 

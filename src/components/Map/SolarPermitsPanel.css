@@ -1,7 +1,7 @@
 .solar-permits-panel {
   position: absolute;
   top: 70px;
-  right: 20px;
+  left: 20px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -9,14 +9,30 @@
   padding: 16px;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
-  z-index: 1;
+  z-index: 1000;
 }
 
-.solar-permits-panel h2 {
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.panel-header h3 {
+  margin: 0;
   font-size: 16px;
   font-weight: 500;
   color: #333;
-  margin: 0 0 16px 0;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #666;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .filter-group {
@@ -25,13 +41,6 @@
 
 .filter-group:last-child {
   margin-bottom: 0;
-}
-
-.filter-group h3 {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-  margin: 0 0 12px 0;
 }
 
 .filter-group h4 {
@@ -57,19 +66,13 @@
   font-size: 13px;
 }
 
-.date-inputs input:focus {
-  outline: none;
-  border-color: #4285f4;
-}
-
-.date-inputs span {
+.date-inputs span,
+.range-inputs span {
   color: #666;
   font-size: 13px;
 }
 
-.permit-features,
-.installer-filters,
-.installer-list {
+.permit-features {
   display: flex;
   flex-direction: column;
   gap: 8px;

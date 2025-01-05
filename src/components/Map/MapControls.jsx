@@ -1,17 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './MapControls.css';
 
-const MapControls = ({ onTogglePanel }) => {
-  const [activePanel, setActivePanel] = useState(null);
-
+const MapControls = ({ onTogglePanel, activePanel }) => {
   const handlePanelToggle = (panelName) => {
-    if (activePanel === panelName) {
-      setActivePanel(null);
-      onTogglePanel(null);
-    } else {
-      setActivePanel(panelName);
-      onTogglePanel(panelName);
-    }
+    console.log('Button clicked:', panelName);
+    console.log('Current activePanel:', activePanel);
+    onTogglePanel(panelName);
   };
 
   return (

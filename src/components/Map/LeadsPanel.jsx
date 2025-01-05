@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import './LeadsPanel.css';
 
-const LeadsPanel = ({ visible }) => {
+const LeadsPanel = ({ visible, onClose }) => {
   const [activeTab, setActiveTab] = useState('list');
 
-  if (!visible) return null;
-
   return (
-    <div className="leads-panel">
+    <>
       <div className="leads-tabs">
         <button 
           className={`tab-button ${activeTab === 'list' ? 'active' : ''}`}
@@ -49,7 +47,7 @@ const LeadsPanel = ({ visible }) => {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 

@@ -1,10 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { debounce } from 'lodash';
 import { fetchDemographicData } from '../../services/censusService';
-import { fetchNeighborhoods, fetchSolarInstallations, fetchMoveIns } from '../../services/solarscoutService';
+import { 
+  fetchNeighborhoods, 
+  fetchSolarInstallations, 
+  fetchMoveIns,
+  fetchUtilityBoundaries,
+  fetchEVStations
+} from '../../services/solarscoutService';
 import { fetchPropertyBoundaries, fetchCityBoundaries } from '../../services/propertyService';
 import { API_CONFIG } from '../../config/api';
 import MapControls from './MapControls';
@@ -37,57 +44,238 @@ const MAP_STYLES = {
 const MapboxMap = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
-  const [mapBounds, setMapBounds] = useState(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapBounds, setMapBounds] = useState(null);
   const [activePanel, setActivePanel] = useState(null);
   const [activeLayers, setActiveLayers] = useState({
-    leads: true,
-    houses: false,
-    neighborhoodInsights: false,
+    moveIns: false,
+    cityBoundaries: false,
+    solarPotential: false,
     utilityBoundaries: false,
-    solarPermits: true,
+    solarPermits: false,
+    evStations: false,
     roofPermits: false,
     hvacPermits: false,
     poolPermits: false,
-    moveIns: true,
-    cityBoundaries: true,
-    solarPotentialAI: false,
-    manufacturedHomes: false,
+    neighborhoodInsights: false,
     hoas: false,
     spanishSpeakers: false,
     zipcodeStats: false,
     sgip: false,
     adRespondents: false,
-    evOwners: false
+    evOwners: false,
+    reapIneligibleAreas: false,
+    powerOutages: false
   });
+  const [selectedProperty, setSelectedProperty] = useState(null);
   const [filters, setFilters] = useState({
+    dateRange: [null, null],
     propertyType: 'all',
     priceRange: [0, 1000000],
-    yearBuilt: [1900, 2024],
-    dateRange: [
-      '2024-10-07',
-      '2025-01-05'
-    ],
+    yearBuilt: [1900, new Date().getFullYear()],
     capacityRange: [0, 50],
     expiredPermits: false,
     recentPermits: false,
     hasBattery: false,
-    bankruptInstallers: false,
-    expiredBankruptPermits: false,
-    lumio: false,
-    titanSolar: false,
-    sunpower: false
-  });
-  const [selectedProperty, setSelectedProperty] = useState(null);
-  const [visiblePanels, setVisiblePanels] = useState({
-    filters: false,
-    leads: false,
-    stats: false,
-    propertyDetails: false
+    installers: {
+      allBankrupt: false,
+      expiredBankrupt: false,
+      lumio: false,
+      titanSolar: false,
+      sunpower: false
+    }
   });
   const [mapStyle, setMapStyle] = useState('satellite');
 
+  const createPopupContent = (feature, layerType) => {
+    const { properties } = feature;
+    const formatDate = (dateStr) => {
+      if (!dateStr) return 'N/A';
+      return new Date(dateStr).toLocaleDateString();
+    };
+
+    const formatCurrency = (value) => {
+      if (!value) return 'N/A';
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD'
+      }).format(value);
+    };
+
+    switch (layerType) {
+      case 'solar-permits':
+        return `
+          <div class="custom-popup">
+            <h4>${properties.address || 'Solar Permit'}</h4>
+            <div class="popup-details">
+              <div class="popup-detail">
+                <span class="label">Permit ID:</span>
+                <span class="value">${properties.permitId || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Status:</span>
+                <span class="value">${properties.status || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">System Size:</span>
+                <span class="value">${properties.systemSize || 'N/A'} kW</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Installer:</span>
+                <span class="value">${properties.installer || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Application Date:</span>
+                <span class="value">${formatDate(properties.applicationDate)}</span>
+              </div>
+              ${properties.hasBattery ? '<div class="popup-detail battery-included">Includes Battery Storage</div>' : ''}
+            </div>
+          </div>
+        `;
+
+      case 'ev-stations':
+        return `
+          <div class="custom-popup">
+            <h4>${properties.name || 'EV Station'}</h4>
+            <div class="popup-details">
+              <div class="popup-detail">
+                <span class="label">Status:</span>
+                <span class="value">${properties.status || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Chargers:</span>
+                <span class="value">${properties.numChargers || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Network:</span>
+                <span class="value">${properties.network || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Connector Types:</span>
+                <span class="value">${properties.connectorTypes || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        `;
+
+      case 'utility-boundaries':
+        return `
+          <div class="custom-popup">
+            <h4>${properties.utilityName || 'Utility Area'}</h4>
+            <div class="popup-details">
+              <div class="popup-detail">
+                <span class="label">Service Area:</span>
+                <span class="value">${properties.serviceArea || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Rate Type:</span>
+                <span class="value">${properties.rateType || 'N/A'}</span>
+              </div>
+              <div class="popup-detail">
+                <span class="label">Solar Rate:</span>
+                <span class="value">${properties.solarRate || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        `;
+
+      default:
+        return '';
+    }
+  };
+
   const initializeLayers = (map) => {
+    // Add utility boundaries source and layer
+    map.addSource('utility-boundaries', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    map.addLayer({
+      id: 'utility-boundaries-layer',
+      type: 'fill',
+      source: 'utility-boundaries',
+      paint: {
+        'fill-color': '#4a90e2',
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          0.3,
+          0.15
+        ],
+        'fill-outline-color': '#4a90e2'
+      },
+      layout: {
+        visibility: activeLayers.utilityBoundaries ? 'visible' : 'none'
+      }
+    });
+
+    // Add solar permits source and layer
+    map.addSource('solar-permits', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    map.addLayer({
+      id: 'solar-permits-layer',
+      type: 'circle',
+      source: 'solar-permits',
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          12, 4,
+          16, 6,
+          18, 8
+        ],
+        'circle-color': '#ff9900',
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          2,
+          1.5
+        ],
+        'circle-stroke-color': '#ffffff',
+        'circle-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          1,
+          0.9
+        ]
+      },
+      layout: {
+        visibility: activeLayers.solarPermits ? 'visible' : 'none'
+      }
+    });
+
+    // Add EV stations source and layer
+    map.addSource('ev-stations', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    map.addLayer({
+      id: 'ev-stations-layer',
+      type: 'symbol',
+      source: 'ev-stations',
+      layout: {
+        'icon-image': 'charging-station',
+        'icon-size': 1.2,
+        'icon-allow-overlap': true,
+        visibility: activeLayers.evStations ? 'visible' : 'none'
+      }
+    });
+
     // Add city boundaries source and layer
     map.addSource('city-boundaries', {
       type: 'geojson',
@@ -259,133 +447,156 @@ const MapboxMap = () => {
       }
     });
 
-    // Improved hover effects using feature state
+    // Add hover effects and popups for solar permits layer
     let hoveredStateId = null;
-    const hoverableLayers = ['move-ins-layer', 'solar-installations-layer', 'neighborhoods-layer'];
-    
-    hoverableLayers.forEach(layerId => {
-      map.on('mousemove', layerId, (e) => {
-        if (e.features.length > 0) {
-          if (hoveredStateId !== null) {
-            map.setFeatureState(
-              { source: layerId.replace('-layer', ''), id: hoveredStateId },
-              { hover: false }
-            );
-          }
-          hoveredStateId = e.features[0].id;
+    const addLayerInteractions = (layerId, sourceId) => {
+      // Mouse enter - show tooltip
+      map.on('mouseenter', layerId, (e) => {
+        if (e.features.length === 0) return;
+        map.getCanvas().style.cursor = 'pointer';
+        
+        // Set hover state
+        if (hoveredStateId) {
           map.setFeatureState(
-            { source: layerId.replace('-layer', ''), id: hoveredStateId },
-            { hover: true }
+            { source: sourceId, id: hoveredStateId },
+            { hover: false }
           );
-          map.getCanvas().style.cursor = 'pointer';
         }
+        hoveredStateId = e.features[0].id;
+        map.setFeatureState(
+          { source: sourceId, id: hoveredStateId },
+          { hover: true }
+        );
       });
 
+      // Mouse leave - hide tooltip
       map.on('mouseleave', layerId, () => {
-        if (hoveredStateId !== null) {
+        map.getCanvas().style.cursor = '';
+        if (hoveredStateId) {
           map.setFeatureState(
-            { source: layerId.replace('-layer', ''), id: hoveredStateId },
+            { source: sourceId, id: hoveredStateId },
             { hover: false }
           );
         }
         hoveredStateId = null;
-        map.getCanvas().style.cursor = '';
       });
-    });
 
-    // Enhanced popup styling with icons
-    const createPopupContent = (feature, type) => {
-      const { properties } = feature;
-      const icons = {
-        price: '💰',
-        year: '🏗️',
-        size: '📏',
-        capacity: '⚡',
-        date: '📅',
-        type: '🏠'
-      };
-      
-      let content = '';
-      
-      if (type === 'move-in') {
-        content = `
-          <div class="popup-content">
-            <h4>${properties.address}</h4>
-            <div class="popup-details">
-              <div class="popup-detail">
-                <span class="label">${icons.price} Price:</span>
-                <span class="value">$${properties.price.toLocaleString()}</span>
-              </div>
-              <div class="popup-detail">
-                <span class="label">${icons.year} Year Built:</span>
-                <span class="value">${properties.yearBuilt}</span>
-              </div>
-              <div class="popup-detail">
-                <span class="label">${icons.size} Size:</span>
-                <span class="value">${properties.squareFeet.toLocaleString()} sq ft</span>
-              </div>
-            </div>
-          </div>
-        `;
-      } else if (type === 'solar') {
-        content = `
-          <div class="popup-content">
-            <h4>${properties.address}</h4>
-            <div class="popup-details">
-              <div class="popup-detail">
-                <span class="label">${icons.capacity} Capacity:</span>
-                <span class="value">${properties.capacity} kW</span>
-              </div>
-              <div class="popup-detail">
-                <span class="label">${icons.date} Install Date:</span>
-                <span class="value">${properties.installDate}</span>
-              </div>
-              <div class="popup-detail">
-                <span class="label">${icons.type} Type:</span>
-                <span class="value">${properties.systemType}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-      
-      return content;
+      // Click - show popup
+      map.on('click', layerId, (e) => {
+        if (e.features.length === 0) return;
+        
+        const coordinates = e.features[0].geometry.coordinates.slice();
+        const layerType = layerId.replace('-layer', '');
+        
+        // Create popup
+        new mapboxgl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          maxWidth: '300px',
+          className: 'custom-popup'
+        })
+          .setLngLat(coordinates)
+          .setHTML(createPopupContent(e.features[0], layerType))
+          .addTo(map);
+      });
     };
 
-    // Add click handlers with enhanced popups
-    map.on('click', 'move-ins-layer', (e) => {
-      if (!e.features.length) return;
-      
-      const feature = e.features[0];
-      const coordinates = feature.geometry.coordinates.slice();
-      
-      new mapboxgl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        maxWidth: '300px',
-        className: 'custom-popup'
-      })
-        .setLngLat(coordinates)
-        .setHTML(createPopupContent(feature, 'move-in'))
-        .addTo(map);
+    // Add interactions to all interactive layers
+    ['solar-permits', 'ev-stations', 'utility-boundaries'].forEach(layerId => {
+      addLayerInteractions(`${layerId}-layer`, layerId);
     });
 
-    map.on('click', 'solar-installations-layer', (e) => {
-      if (!e.features.length) return;
+    // Update layer filters based on user input
+    const updateLayerFilters = () => {
+      if (!map.getLayer('solar-permits-layer')) return;
+
+      // Solar permits filters
+      const solarFilters = ['all'];
       
-      const feature = e.features[0];
-      const coordinates = feature.geometry.coordinates.slice();
-      
-      new mapboxgl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        maxWidth: '300px',
-        className: 'custom-popup'
-      })
-        .setLngLat(coordinates)
-        .setHTML(createPopupContent(feature, 'solar'))
-        .addTo(map);
-    });
+      // Date range filter
+      if (filters.dateRange[0] && filters.dateRange[1]) {
+        solarFilters.push([
+          'all',
+          ['>=', ['get', 'applicationDate'], filters.dateRange[0]],
+          ['<=', ['get', 'applicationDate'], filters.dateRange[1]]
+        ]);
+      }
+
+      // System capacity filter
+      if (filters.capacityRange[0] !== 0 || filters.capacityRange[1] !== 50) {
+        solarFilters.push([
+          'all',
+          ['>=', ['get', 'systemSize'], filters.capacityRange[0]],
+          ['<=', ['get', 'systemSize'], filters.capacityRange[1]]
+        ]);
+      }
+
+      // Permit features filters
+      if (filters.expiredPermits) {
+        solarFilters.push(['==', ['get', 'status'], 'expired']);
+      }
+      if (filters.recentPermits) {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const sixtyDaysAgo = new Date();
+        sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+        
+        solarFilters.push([
+          'all',
+          ['>=', ['get', 'applicationDate'], sixtyDaysAgo.toISOString()],
+          ['<=', ['get', 'applicationDate'], thirtyDaysAgo.toISOString()]
+        ]);
+      }
+      if (filters.hasBattery) {
+        solarFilters.push(['==', ['get', 'hasBattery'], true]);
+      }
+
+      // Installer filters
+      if (filters.installers) {
+        const installerFilters = [];
+        if (filters.installers.allBankrupt) {
+          installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
+        }
+        if (filters.installers.expiredBankrupt) {
+          installerFilters.push([
+            'all',
+            ['==', ['get', 'installerStatus'], 'bankrupt'],
+            ['==', ['get', 'status'], 'expired']
+          ]);
+        }
+        if (filters.installers.lumio) {
+          installerFilters.push(['==', ['get', 'installer'], 'Lumio']);
+        }
+        if (filters.installers.titanSolar) {
+          installerFilters.push(['==', ['get', 'installer'], 'Titan Solar Power']);
+        }
+        if (filters.installers.sunpower) {
+          installerFilters.push(['==', ['get', 'installer'], 'Sunpower']);
+        }
+        
+        if (installerFilters.length > 0) {
+          solarFilters.push(['any', ...installerFilters]);
+        }
+      }
+
+      // Apply filters to layer
+      map.setFilter('solar-permits-layer', solarFilters);
+
+      // EV stations filters
+      if (map.getLayer('ev-stations-layer')) {
+        const evFilters = ['all'];
+        // Add minimum chargers filter
+        evFilters.push(['>=', ['get', 'numChargers'], 2]);
+        map.setFilter('ev-stations-layer', evFilters);
+      }
+    };
+
+    // Update filters when they change
+    useEffect(() => {
+      if (map.current && mapLoaded) {
+        updateLayerFilters();
+      }
+    }, [filters, mapLoaded]);
   };
 
   const handleStyleChange = (styleId) => {
@@ -526,49 +737,177 @@ const MapboxMap = () => {
   }, []);
 
   // Load data when bounds change
+  const loadMapData = async () => {
+    if (!map.current || !mapBounds) return;
+
+    try {
+      const loadLayerData = async (layerId, fetchFunction, options = {}) => {
+        if (!activeLayers[layerId]) return;
+
+        try {
+          const source = map.current.getSource(layerId);
+          if (!source) {
+            console.warn(`Source not found for layer: ${layerId}`);
+            return;
+          }
+
+          // Show loading state
+          if (options.showLoading) {
+            map.current.setLayoutProperty(
+              `${layerId}-layer`,
+              'visibility',
+              'none'
+            );
+          }
+
+          const data = await fetchFunction(mapBounds, filters);
+          source.setData(data);
+
+          // Restore visibility
+          if (options.showLoading) {
+            map.current.setLayoutProperty(
+              `${layerId}-layer`,
+              'visibility',
+              activeLayers[layerId] ? 'visible' : 'none'
+            );
+          }
+        } catch (error) {
+          console.error(`Error loading data for ${layerId}:`, error);
+          // Show error state or fallback
+        }
+      };
+
+      // Load all layer data in parallel
+      await Promise.all([
+        loadLayerData('utility-boundaries', fetchUtilityBoundaries, { showLoading: true }),
+        loadLayerData('solar-permits', fetchSolarInstallations, { showLoading: true }),
+        loadLayerData('ev-stations', fetchEVStations, { showLoading: true }),
+        loadLayerData('move-ins', fetchMoveIns),
+        loadLayerData('neighborhoods', fetchNeighborhoods),
+        loadLayerData('city-boundaries', fetchCityBoundaries)
+      ]);
+
+      // Update filters after data is loaded
+      updateLayerFilters();
+    } catch (error) {
+      console.error('Error loading map data:', error);
+      // Show error state to user
+    }
+  };
+
+  // Debounce the loadMapData function to prevent too many API calls
+  const debouncedLoadMapData = useCallback(
+    debounce(() => {
+      loadMapData();
+    }, 300),
+    [mapBounds, activeLayers, filters]
+  );
+
+  // Update data when bounds, layers, or filters change
   useEffect(() => {
-    const loadMapData = async () => {
-      if (!map.current || !mapBounds) return;
+    debouncedLoadMapData();
+    return () => debouncedLoadMapData.cancel();
+  }, [mapBounds, activeLayers, filters]);
 
-      try {
-        // Load solar permits data if layer is active
-        if (activeLayers.solarPermits) {
-          const solarData = await fetchSolarInstallations(mapBounds, filters);
-          if (map.current.getSource('solar-installations')) {
-            map.current.getSource('solar-installations').setData(solarData);
-          }
-        }
+  // Enhanced layer filter function
+  const updateLayerFilters = () => {
+    if (!map.current) return;
 
-        // Load move-ins data if layer is active
-        if (activeLayers.moveIns) {
-          const moveInsData = await fetchMoveIns(mapBounds, filters);
-          if (map.current.getSource('move-ins')) {
-            map.current.getSource('move-ins').setData(moveInsData);
-          }
-        }
-
-        // Load neighborhoods data if layer is active
-        if (activeLayers.neighborhoodInsights) {
-          const neighborhoodsData = await fetchNeighborhoods(mapBounds);
-          if (map.current.getSource('neighborhoods')) {
-            map.current.getSource('neighborhoods').setData(neighborhoodsData);
-          }
-        }
-
-        // Load city boundaries if layer is active
-        if (activeLayers.cityBoundaries) {
-          const cityData = await fetchCityBoundaries(mapBounds);
-          if (map.current.getSource('city-boundaries')) {
-            map.current.getSource('city-boundaries').setData(cityData);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading map data:', error);
-      }
+    const layers = {
+      'solar-permits-layer': createSolarPermitsFilter(),
+      'ev-stations-layer': createEVStationsFilter(),
+      'utility-boundaries-layer': createUtilityBoundariesFilter()
     };
 
-    loadMapData();
-  }, [mapBounds, activeLayers, filters]);
+    Object.entries(layers).forEach(([layerId, filter]) => {
+      if (map.current.getLayer(layerId) && filter) {
+        map.current.setFilter(layerId, filter);
+      }
+    });
+  };
+
+  const createSolarPermitsFilter = () => {
+    const solarFilters = ['all'];
+    
+    // Date range filter
+    if (filters.dateRange[0] && filters.dateRange[1]) {
+      solarFilters.push([
+        'all',
+        ['>=', ['get', 'applicationDate'], filters.dateRange[0]],
+        ['<=', ['get', 'applicationDate'], filters.dateRange[1]]
+      ]);
+    }
+
+    // System capacity filter
+    if (filters.capacityRange[0] !== 0 || filters.capacityRange[1] !== 50) {
+      solarFilters.push([
+        'all',
+        ['>=', ['get', 'systemSize'], filters.capacityRange[0]],
+        ['<=', ['get', 'systemSize'], filters.capacityRange[1]]
+      ]);
+    }
+
+    // Permit features filters
+    if (filters.expiredPermits) {
+      solarFilters.push(['==', ['get', 'status'], 'expired']);
+    }
+    if (filters.recentPermits) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      
+      solarFilters.push([
+        'all',
+        ['>=', ['get', 'applicationDate'], sixtyDaysAgo.toISOString()],
+        ['<=', ['get', 'applicationDate'], thirtyDaysAgo.toISOString()]
+      ]);
+    }
+    if (filters.hasBattery) {
+      solarFilters.push(['==', ['get', 'hasBattery'], true]);
+    }
+
+    // Installer filters
+    if (filters.installers) {
+      const installerFilters = [];
+      if (filters.installers.allBankrupt) {
+        installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
+      }
+      if (filters.installers.expiredBankrupt) {
+        installerFilters.push([
+          'all',
+          ['==', ['get', 'installerStatus'], 'bankrupt'],
+          ['==', ['get', 'status'], 'expired']
+        ]);
+      }
+      if (filters.installers.lumio) {
+        installerFilters.push(['==', ['get', 'installer'], 'Lumio']);
+      }
+      if (filters.installers.titanSolar) {
+        installerFilters.push(['==', ['get', 'installer'], 'Titan Solar Power']);
+      }
+      if (filters.installers.sunpower) {
+        installerFilters.push(['==', ['get', 'installer'], 'Sunpower']);
+      }
+      
+      if (installerFilters.length > 0) {
+        solarFilters.push(['any', ...installerFilters]);
+      }
+    }
+
+    return solarFilters;
+  };
+
+  const createEVStationsFilter = () => {
+    return ['all',
+      ['>=', ['get', 'numChargers'], 2],
+      ['==', ['get', 'status'], 'active']
+    ];
+  };
+
+  const createUtilityBoundariesFilter = () => {
+    return ['all']; // Add utility-specific filters here
+  };
 
   // Toggle layer visibility
   const toggleLayer = (layerId) => {
@@ -593,11 +932,19 @@ const MapboxMap = () => {
 
   // Toggle panel visibility
   const togglePanel = (panelName) => {
-    setVisiblePanels(prev => ({
-      ...prev,
-      [panelName]: !prev[panelName]
-    }));
+    console.log('Toggling panel:', panelName, 'Current active panel:', activePanel);
+    if (activePanel === panelName) {
+      console.log('Closing panel:', panelName);
+      setActivePanel(null);
+    } else {
+      console.log('Opening panel:', panelName);
+      setActivePanel(panelName);
+    }
   };
+
+  useEffect(() => {
+    console.log('Active panel changed to:', activePanel);
+  }, [activePanel]);
 
   // Handle property selection
   const handlePropertyClick = (feature) => {
@@ -609,38 +956,75 @@ const MapboxMap = () => {
   };
 
   return (
-    <div className="map-wrapper">
-      <div ref={mapContainer} className="map-container" />
+    <div className="map-container">
+      <div ref={mapContainer} className="map" />
+      
       {mapLoaded && (
         <>
-          <MapControls onTogglePanel={setActivePanel} />
+          <MapControls onTogglePanel={togglePanel} activePanel={activePanel} />
           <div className="panel-container">
-            <LayersPanel
-              visible={activePanel === 'layers'}
-              activeLayers={activeLayers}
-              onLayerToggle={toggleLayer}
-              onClose={() => setActivePanel(null)}
-              className={`panel layers-panel ${activePanel === 'layers' ? 'visible' : ''}`}
-            />
-            <LeadsPanel 
-              visible={activePanel === 'leads'}
-              onClose={() => setActivePanel(null)}
-              className={`panel leads-panel ${activePanel === 'leads' ? 'visible' : ''}`}
-            />
-            <FiltersPanel
-              visible={activePanel === 'filters'}
-              filters={filters}
-              onFiltersChange={setFilters}
-              onClose={() => setActivePanel(null)}
-              className={`panel filters-panel ${activePanel === 'filters' ? 'visible' : ''}`}
-            />
-            <SolarPermitsPanel
-              visible={activePanel === 'solar-permits'}
-              filters={filters}
-              onFiltersChange={setFilters}
-              onClose={() => setActivePanel(null)}
-              className={`panel solar-permits-panel ${activePanel === 'solar-permits' ? 'visible' : ''}`}
-            />
+            <div className={`panel ${activePanel === 'layers' ? 'visible' : ''}`}>
+              <div className="panel-header">
+                <h3>Layers</h3>
+                <button className="panel-close" onClick={() => togglePanel('layers')}>×</button>
+              </div>
+              <div className="panel-content">
+                <LayersPanel
+                  activeLayers={activeLayers}
+                  onLayerToggle={toggleLayer}
+                />
+              </div>
+            </div>
+            
+            <div className={`panel ${activePanel === 'filters' ? 'visible' : ''}`}>
+              <div className="panel-header">
+                <h3>Filters</h3>
+                <button className="panel-close" onClick={() => togglePanel('filters')}>×</button>
+              </div>
+              <div className="panel-content">
+                <FiltersPanel
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                />
+              </div>
+            </div>
+            
+            <div className={`panel ${activePanel === 'leads' ? 'visible' : ''}`}>
+              <div className="panel-header">
+                <h3>Leads</h3>
+                <button className="panel-close" onClick={() => togglePanel('leads')}>×</button>
+              </div>
+              <div className="panel-content">
+                <LeadsPanel />
+              </div>
+            </div>
+            
+            <div className={`panel ${activePanel === 'solar-permits' ? 'visible' : ''}`}>
+              <div className="panel-header">
+                <h3>Solar Permits</h3>
+                <button className="panel-close" onClick={() => togglePanel('solar-permits')}>×</button>
+              </div>
+              <div className="panel-content">
+                <SolarPermitsPanel
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                />
+              </div>
+            </div>
+            
+            {selectedProperty && (
+              <div className={`panel ${activePanel === 'propertyDetails' ? 'visible' : ''}`}>
+                <div className="panel-header">
+                  <h3>Property Details</h3>
+                  <button className="panel-close" onClick={() => togglePanel('propertyDetails')}>×</button>
+                </div>
+                <div className="panel-content">
+                  <PropertyDetailsPanel
+                    property={selectedProperty}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

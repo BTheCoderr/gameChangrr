@@ -1,0 +1,15 @@
+.boundary-toggle {
+  padding: 8px 12px;
+  background: white;
+  border: 2px solid rgba(0,0,0,0.2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.boundary-toggle.active {
+  background: #eee;
+}
+
+.boundary-toggle:hover {
+  background: #f4f4f4;
+} 

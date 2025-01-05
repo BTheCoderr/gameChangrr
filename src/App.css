@@ -15,7 +15,7 @@ html, body, #root, .app {
   height: 100%;
 }
 
-.leaflet-container {
+.mapboxgl-map {
   width: 100%;
   height: 100%;
   z-index: 1;
@@ -40,4 +40,37 @@ html, body, #root, .app {
 
 .MuiListItemIcon-root {
   color: #1976d2 !important;
+}
+
+/* Mapbox specific styles */
+.mapboxgl-popup {
+  max-width: 400px;
+}
+
+.mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mapboxgl-popup-close-button {
+  right: 8px;
+  top: 8px;
+  color: white;
+}
+
+.mapboxgl-ctrl-geocoder {
+  min-width: 100%;
+}
+
+.mapboxgl-ctrl-geocoder--input {
+  padding: 6px 45px;
+}
+
+.mapboxgl-ctrl-geocoder--icon {
+  top: 8px;
+}
+
+.mapboxgl-ctrl-geocoder--button {
+  top: 3px;
 }

@@ -31,6 +31,15 @@ const FALLBACK_DATA = [
   // Add more fallback data points as needed
 ];
 
+// Update feature coordinates for Mapbox
+const transformFeature = (feature) => ({
+  ...feature,
+  geometry: {
+    ...feature.geometry,
+    coordinates: feature.geometry.coordinates // Mapbox uses [lng, lat]
+  }
+});
+
 export const fetchMoveIns = async (bounds) => {
   try {
     // Check cache first

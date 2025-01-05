@@ -1,0 +1,346 @@
+html, body, #root {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.map-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #f0f0f0; /* Temporary background to see container */
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Top Left Controls */
+.map-controls {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.control-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+}
+
+.control-button:hover {
+  background: #f8f8f8;
+}
+
+.control-button.active {
+  background: #4264fb;
+  color: white;
+}
+
+/* Top Right Controls */
+.mapboxgl-control-container {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Map Style Switcher */
+.map-style-switcher {
+  display: flex;
+  height: 29px;
+  border: none;
+  background: none;
+}
+
+.style-button {
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  border-right: 1px solid rgba(0,0,0,0.1);
+  height: 29px;
+  min-width: 60px;
+  transition: all 0.2s ease;
+}
+
+.style-button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.style-button:last-child {
+  border-right: none;
+  border-radius: 0 4px 4px 0;
+}
+
+.style-button.active {
+  background: #4264fb;
+  color: white;
+  font-weight: 500;
+}
+
+.style-button:not(.active) {
+  background: rgba(255, 255, 255, 0.85);
+  color: #333;
+}
+
+.style-button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* Search Box */
+.mapboxgl-ctrl-geocoder {
+  min-width: 300px !important;
+  font-family: inherit !important;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+  border-radius: 4px !important;
+  margin: 0 !important;
+  transition: width 0.3s ease, min-width 0.3s ease !important;
+  overflow: hidden !important;
+  background: white !important;
+}
+
+.mapboxgl-ctrl-geocoder.collapsed {
+  min-width: 36px !important;
+  width: 36px !important;
+  cursor: pointer;
+}
+
+.mapboxgl-ctrl-geocoder.collapsed .mapboxgl-ctrl-geocoder--input {
+  padding: 6px !important;
+  width: 24px !important;
+  opacity: 0;
+}
+
+.mapboxgl-ctrl-geocoder.collapsed .mapboxgl-ctrl-geocoder--icon-search {
+  left: 6px !important;
+  cursor: pointer !important;
+}
+
+.mapboxgl-ctrl-geocoder--input {
+  height: 29px !important;
+  padding: 6px 32px !important;
+  font-size: 13px !important;
+  color: #333 !important;
+  transition: all 0.3s ease !important;
+  width: 100% !important;
+}
+
+.mapboxgl-ctrl-geocoder--icon-search {
+  top: 7px !important;
+  left: 8px !important;
+  transition: left 0.3s ease !important;
+  pointer-events: all !important;
+}
+
+.mapboxgl-ctrl-geocoder--button {
+  display: none !important;
+}
+
+/* Make sure the search box is above other controls */
+.mapboxgl-ctrl-top-right .mapboxgl-ctrl-geocoder {
+  z-index: 2 !important;
+  pointer-events: all !important;
+}
+
+/* Navigation controls */
+.mapboxgl-ctrl-group {
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+  border-radius: 4px !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+}
+
+.mapboxgl-ctrl-group button {
+  width: 29px !important;
+  height: 29px !important;
+  background-color: white !important;
+  border: none !important;
+}
+
+/* Panel Positioning */
+.panel-container {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  bottom: 20px;
+  display: flex;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.panel {
+  pointer-events: auto;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+  height: auto;
+  max-height: calc(100vh - 120px);
+  width: 320px;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Panel content */
+.panel-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: calc(100vh - 180px); /* Ensure content is scrollable */
+}
+
+/* Panel header */
+.panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Panel close button */
+.panel-close {
+  padding: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.panel-close:hover {
+  opacity: 1;
+}
+
+/* Ensure panels don't overlap with top controls */
+.mapboxgl-ctrl-top-right {
+  z-index: 1001;
+}
+
+/* Custom popup styling */
+.custom-popup {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  padding: 12px;
+}
+
+.popup-content h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.popup-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popup-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popup-detail .label {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.popup-detail .value {
+  font-weight: 500;
+  color: #333;
+}
+
+/* Scrollbar styling */
+.filters-panel::-webkit-scrollbar,
+.layers-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.filters-panel::-webkit-scrollbar-track,
+.layers-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.filters-panel::-webkit-scrollbar-thumb,
+.layers-panel::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.filters-panel::-webkit-scrollbar-thumb:hover,
+.layers-panel::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+}
+
+.map-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+.panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+} 

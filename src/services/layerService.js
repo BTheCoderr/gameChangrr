@@ -1,109 +1,108 @@
-import L from 'leaflet';
+// Layer utility functions for Mapbox GL JS
 
-// Function to create solar installations layer
-export const createSolarInstallationsLayer = (map) => {
-  // Example data - replace with real API call
-  const solarInstallations = [
-    { lat: 42.1015, lng: -72.5898, size: '5kW', date: '2023-01-01' },
-    { lat: 42.1115, lng: -72.5798, size: '7kW', date: '2023-02-15' }
-  ];
-
-  const layerGroup = L.layerGroup();
-
-  solarInstallations.forEach(installation => {
-    const marker = L.circleMarker([installation.lat, installation.lng], {
-      radius: 8,
-      fillColor: '#FFC107',
-      color: '#fff',
-      weight: 1,
-      opacity: 1,
-      fillOpacity: 0.8
+export const createMoveInsLayer = (map, source) => {
+  if (!map.getSource('move-ins')) {
+    map.addSource('move-ins', {
+      type: 'geojson',
+      data: source,
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50
     });
+  }
 
-    marker.bindPopup(`
-      <div>
-        <h3>Solar Installation</h3>
-        <p>Size: ${installation.size}</p>
-        <p>Date: ${installation.date}</p>
-      </div>
-    `);
-
-    layerGroup.addLayer(marker);
+  // Add clusters layer
+  map.addLayer({
+    id: 'clusters',
+    type: 'circle',
+    source: 'move-ins',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': [
+        'step',
+        ['get', 'point_count'],
+        '#51bbd6',
+        5,
+        '#f1f075',
+        10,
+        '#f28cb1'
+      ],
+      'circle-radius': [
+        'step',
+        ['get', 'point_count'],
+        20,
+        5,
+        30,
+        10,
+        40
+      ]
+    }
   });
 
-  return layerGroup;
-};
-
-// Function to create solar potential layer
-export const createSolarPotentialLayer = (map) => {
-  // Example data - replace with real API call
-  const potentialAreas = [
-    {
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[
-          [-72.5898, 42.1015],
-          [-72.5898, 42.1115],
-          [-72.5798, 42.1115],
-          [-72.5798, 42.1015],
-          [-72.5898, 42.1015]
-        ]]
-      },
-      properties: {
-        potential: 'High',
-        annualSunHours: 2000
-      }
+  // Add cluster count layer
+  map.addLayer({
+    id: 'cluster-count',
+    type: 'symbol',
+    source: 'move-ins',
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': '{point_count_abbreviated}',
+      'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+      'text-size': 12
     }
-  ];
+  });
 
-  const layerGroup = L.layerGroup();
-
-  L.geoJSON(potentialAreas, {
-    style: {
-      color: '#FF9800',
-      weight: 2,
-      opacity: 0.6,
-      fillOpacity: 0.2
-    },
-    onEachFeature: (feature, layer) => {
-      layer.bindPopup(`
-        <div>
-          <h3>Solar Potential</h3>
-          <p>Potential: ${feature.properties.potential}</p>
-          <p>Annual Sun Hours: ${feature.properties.annualSunHours}</p>
-        </div>
-      `);
+  // Add unclustered point layer
+  map.addLayer({
+    id: 'unclustered-point',
+    type: 'circle',
+    source: 'move-ins',
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': '#4CAF50',
+      'circle-radius': 8,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff'
     }
-  }).addTo(layerGroup);
-
-  return layerGroup;
+  });
 };
 
-// Add more layer creation functions as needed
-export const createPropertyBoundariesLayer = (map) => {
-  // Implementation for property boundaries
-  return L.layerGroup();
+export const createNeighborhoodsLayer = (map, source) => {
+  if (!map.getSource('neighborhoods')) {
+    map.addSource('neighborhoods', {
+      type: 'geojson',
+      data: source
+    });
+  }
+
+  map.addLayer({
+    id: 'neighborhood-boundaries',
+    type: 'fill',
+    source: 'neighborhoods',
+    paint: {
+      'fill-color': '#1976d2',
+      'fill-opacity': 0.1,
+      'fill-outline-color': '#1976d2'
+    }
+  });
 };
 
-export const createSolarPermitsLayer = (map) => {
-  // Implementation for solar permits
-  return L.layerGroup();
-};
+export const createSolarInstallationsLayer = (map, source) => {
+  if (!map.getSource('solar-installations')) {
+    map.addSource('solar-installations', {
+      type: 'geojson',
+      data: source
+    });
+  }
 
-export const createNeighborhoodInsightsLayer = (map) => {
-  // Implementation for neighborhood insights
-  return L.layerGroup();
-};
-
-// Function to initialize all layers
-export const initializeLayers = (map) => {
-  return {
-    solarInstallations: createSolarInstallationsLayer(map),
-    solarPotential: createSolarPotentialLayer(map),
-    propertyBoundaries: createPropertyBoundariesLayer(map),
-    solarPermits: createSolarPermitsLayer(map),
-    neighborhoodInsights: createNeighborhoodInsightsLayer(map),
-    // Add more layers as needed
-  };
+  map.addLayer({
+    id: 'solar-installations',
+    type: 'circle',
+    source: 'solar-installations',
+    paint: {
+      'circle-color': '#f57c00',
+      'circle-radius': 6,
+      'circle-opacity': 0.7
+    }
+  });
 };

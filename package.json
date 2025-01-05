@@ -1,47 +1,44 @@
 {
-  "name": "map-services",
-  "private": true,
+  "name": "gamechangrr",
   "version": "1.0.0",
-  "type": "module",
-  "engines": {
-    "node": "18.x"
-  },
+  "private": true,
   "scripts": {
     "dev": "vite",
-    "dev:all": "concurrently \"npm run dev\" \"cd server && npm run dev\"",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
-    "netlify-build": "npm install && vite build",
-    "heroku-postbuild": "cd server && npm install",
-    "fetch:boundaries": "node src/scripts/data-fetching/fetch-all.js",
-    "fetch:massgis": "node src/scripts/data-fetching/massgis-fetcher.js",
-    "fetch:census": "node src/scripts/data-fetching/census-fetcher.js",
-    "fetch:osm": "node src/scripts/data-fetching/osm-fetcher.js"
+    "lint": "eslint src --ext .js,.jsx",
+    "lint:fix": "eslint src --ext .js,.jsx --fix",
+    "format": "prettier --write \"src/**/*.{js,jsx,css,md}\"",
+    "test": "vitest",
+    "test:watch": "vitest watch",
+    "prepare": "husky install"
   },
   "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.0",
-    "@mui/icons-material": "^6.3.0",
-    "@mui/material": "^6.3.0",
-    "@react-google-maps/api": "^2.20.5",
-    "axios": "^1.7.9",
-    "cheerio": "^1.0.0",
-    "leaflet": "^1.9.4",
-    "mapbox-gl": "^3.9.1",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mapbox/mapbox-gl-geocoder": "^5.0.3",
+    "@mui/icons-material": "^5.11.16",
+    "@mui/lab": "^5.0.0-alpha.129",
+    "@mui/material": "^5.13.0",
+    "axios": "^1.4.0",
+    "mapbox-gl": "^3.9.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.28.1"
+    "react-router-dom": "^7.1.1"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
-    "eslint": "^8.55.0",
-    "eslint-plugin-react": "^7.37.2",
-    "eslint-plugin-react-hooks": "^5.1.0",
-    "eslint-plugin-react-refresh": "^0.4.14",
-    "vite": "^6.0.1"
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^14.0.0",
+    "@types/react": "^18.2.6",
+    "@types/react-dom": "^18.2.4",
+    "@vitejs/plugin-react": "^4.0.0",
+    "eslint": "^8.40.0",
+    "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^8.0.3",
+    "jsdom": "^22.0.0",
+    "prettier": "^2.8.8",
+    "vite": "^4.3.5",
+    "vitest": "^0.31.0"
   }
 }

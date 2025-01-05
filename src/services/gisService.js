@@ -1,5 +1,4 @@
 import * as shapefile from 'shapefile'
-import { GeoJSON } from 'leaflet'
 
 export const loadParcelData = async (shpFile) => {
   try {
@@ -154,4 +153,66 @@ const convertToCSV = (features) => {
   );
   
   return [headers.join(','), ...rows].join('\n');
-} 
+}
+
+// GIS utility functions for Mapbox GL JS
+
+export const validateGeoJSON = (data) => {
+  if (!data || typeof data !== 'object') return false;
+  if (data.type !== 'FeatureCollection' && data.type !== 'Feature') return false;
+  if (data.type === 'FeatureCollection' && !Array.isArray(data.features)) return false;
+  return true;
+};
+
+export const transformGeoJSON = (data) => {
+  if (!validateGeoJSON(data)) {
+    console.error('Invalid GeoJSON data:', data);
+    return null;
+  }
+  return data;
+};
+
+export const getBounds = (geojson) => {
+  if (!validateGeoJSON(geojson)) return null;
+
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+
+  const features = geojson.type === 'FeatureCollection' ? geojson.features : [geojson];
+
+  features.forEach(feature => {
+    if (!feature.geometry) return;
+
+    const coords = feature.geometry.coordinates;
+    if (!coords) return;
+
+    const processCoords = (coord) => {
+      const [lng, lat] = coord;
+      minLng = Math.min(minLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLng = Math.max(maxLng, lng);
+      maxLat = Math.max(maxLat, lat);
+    };
+
+    switch (feature.geometry.type) {
+      case 'Point':
+        processCoords(coords);
+        break;
+      case 'LineString':
+      case 'MultiPoint':
+        coords.forEach(processCoords);
+        break;
+      case 'Polygon':
+      case 'MultiLineString':
+        coords.forEach(line => line.forEach(processCoords));
+        break;
+      case 'MultiPolygon':
+        coords.forEach(poly => poly.forEach(line => line.forEach(processCoords)));
+        break;
+    }
+  });
+
+  return [[minLng, minLat], [maxLng, maxLat]];
+}; 

@@ -1,186 +1,95 @@
-# Game Changer Map Application
+# Solar Scout
 
-A full-stack application that displays various data layers on a Google Maps interface, including utility boundaries, solar permits, EV charging stations, and demographic data.
+A comprehensive solar installation and property analysis tool.
 
-## Current Deployment
+## Features
 
-* Frontend: Deployed on Netlify
-* Backend: Deployed on Heroku
+- Interactive map with property data visualization
+- Solar potential analysis using NREL data
+- Real-time weather information
+- Property details from Regrid
+- Census demographic data
+- Move-in tracking and analysis
 
-## Live URLs
+## Setup
 
-* Frontend: Netlify App
-* Backend: Heroku API
-
-## Environment Setup
-
-### Frontend (.env)
-
-```
-VITE_API_URL=https://game-changer-map-api-4530bd9b4dbb.herokuapp.com
-VITE_GOOGLE_MAPS_API_KEY=your_key
-```
-
-### Backend (.env on Heroku)
-
-```
-GOOGLE_MAPS_API_KEY=your_key
-NREL_API_KEY=your_key
-CENSUS_API_KEY=your_key
-ATTOM_API_KEY=your_key
-MASS_DATA_API_KEY=your_key
-FRONTEND_URL=https://game-changer-map.netlify.app
-```
-
-## Deployment Instructions
-
-### Frontend (Netlify)
-
-1. Connect your GitHub repository to Netlify
-2. Configure build settings:  
-   * Build command: `npm run build`  
-     * Publish directory: `dist`
-3. Add environment variables in Netlify's dashboard
-4. Deploy!
-
-### Backend (Heroku)
-
-1. Create a new Heroku app
-2. Connect your GitHub repository
-3. Add environment variables in Heroku's settings
-4. Deploy from GitHub main branch
-
-## Available Data Layers
-
-* Leads
-* Neighborhood Insights
-* Utility Boundaries
-* Solar Permits
-* Move Ins
-* City Boundaries
-* Spanish Speakers
-* Manufactured Homes
-* EV Owners
-
-## API Endpoints
-
-### Health Check
-
-```
-GET /health
-```
-
-### NREL API (EV Charging Stations)
-
-```
-GET /api/nrel/stations
-```
-
-### Utility Boundaries
-
-```
-GET /api/utility/boundaries
-```
-
-### Census Data
-
-```
-GET /api/census/fips
-GET /api/census/demographics
-```
-
-## Local Development
-
-### Frontend
-
+1. Clone the repository:
 ```bash
-cd game-changer
+git clone https://github.com/yourusername/solar-scout.git
+cd solar-scout
+```
+
+2. Install dependencies:
+```bash
 npm install
+```
+
+3. Set up API keys:
+   - Copy `.env.example` to `.env`:
+     ```bash
+     cp .env.example .env
+     ```
+   - Get API keys from:
+     - [Mapbox](https://account.mapbox.com/)
+     - [Census Bureau](https://api.census.gov/data/key_signup.html)
+     - [NREL](https://developer.nrel.gov/signup/)
+     - [OpenWeatherMap](https://openweathermap.org/api)
+     - [Regrid](https://regrid.com/api)
+   - Add your API keys to `.env`
+
+4. Start the development server:
+```bash
 npm run dev
 ```
 
-### Backend
+## API Integration
 
-```bash
-cd game-changer/server
-npm install
-npm run dev
-```
+### Mapbox
+- Used for base map rendering
+- Custom layers for data visualization
+- Geocoding and address search
 
-## Troubleshooting
+### Census Bureau API
+- Demographic data by census tract
+- Population statistics
+- Income and housing data
 
-### Port Issues
+### NREL Solar API
+- Solar radiation data
+- PV system performance estimates
+- Energy production forecasts
 
-If port 3000 is in use:
+### OpenWeatherMap
+- Current weather conditions
+- 5-day weather forecast
+- Cloud cover and solar impact
 
-```bash
-lsof -ti :3000 | xargs kill -9
-```
+### Regrid
+- Property boundaries
+- Ownership information
+- Land use and zoning data
 
-### API Issues
+## Development
 
-* Verify all API keys are correctly set in both frontend and backend .env files
-* Check CORS settings in backend if API calls fail
+### Adding New Features
+1. Create a new service in `src/services/`
+2. Add API configuration in `src/config/api.js`
+3. Create components in `src/components/`
+4. Update the map or UI as needed
 
-## Future Plans
+### Mock Data
+- Set `VITE_USE_MOCK_DATA=true` for development
+- Mock implementations available in each service
+- Cached responses to reduce API calls
 
-We plan to explore using Leaflet or Mapbox for map rendering while keeping the current Google Maps integration intact. This will allow us to compare performance and features.
+## Contributing
 
-## About
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
-No description, website, or topics provided.
+## License
 
-### Resources
-
-Readme
-
-### License
-
-MIT license
-
-Activity
-
-### Stars
-
-**0** stars
-
-### Watchers
-
-**1** watching
-
-### Forks
-
-**0** forks
-
-Report repository
-
-## Releases
-
-No releases published
-
-## Packages0
-
-No packages published
-
-## Languages
-
-* JavaScript 98.3%
-* CSS 1.2%
-* Other 0.5%
-
-## Footer
-
-© 2025 GitHub, Inc.
-
-### Footer navigation
-
-* Terms
-* Privacy
-* Security
-* Status
-* Docs
-* Contact
-* Manage cookies
-* Do not share my personal information
-
-You can’t perform that action at this time.
+MIT License - see LICENSE file for details

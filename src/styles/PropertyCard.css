@@ -1,0 +1,77 @@
+.property-card {
+  min-width: 300px;
+  padding: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.property-header {
+  margin-bottom: 15px;
+}
+
+.property-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.property-header p {
+  margin: 2px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.property-details {
+  margin: 15px 0;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.detail-row .label {
+  color: #666;
+}
+
+.detail-row .value {
+  font-weight: 500;
+}
+
+.property-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.action-btn {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.action-btn.not-interested:hover {
+  background: #ffe3e3;
+  border-color: #ffa8a8;
+}
+
+.action-btn.to-visit:hover {
+  background: #e6fcf5;
+  border-color: #96f2d7;
+}
+
+.action-btn.appointment:hover {
+  background: #eef3ff;
+  border-color: #91a7ff;
+} 

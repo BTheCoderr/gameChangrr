@@ -1,40 +1,31 @@
-import React, { useState } from 'react';
-import { Box } from '@mui/material';
-import MainLayout from './components/MainLayout';
+import React from 'react';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import MapboxMap from './components/Map/MapboxMap';
+
+// Create a theme instance
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#2879b9',
+    },
+    secondary: {
+      main: '#08306b',
+    },
+    background: {
+      default: '#ffffff',
+    },
+  },
+});
 
 function App() {
-  const [activeLayers, setActiveLayers] = useState({
-    standardMap: false,
-    satelliteView: true,
-    solarInstallations: false,
-    solarPotential: false,
-    propertyBoundaries: false,
-    solarPermits: false,
-    neighborhoodInsights: false,
-    moveIns: false,
-    leads: false,
-    utilityBoundaries: false,
-    cityBoundaries: false,
-    manufacturedHomes: false,
-    spanishSpeakers: false,
-    evOwners: false,
-    aerial: false
-  });
-
-  const handleLayerToggle = (layerId, value) => {
-    setActiveLayers(prev => ({
-      ...prev,
-      [layerId]: value !== undefined ? value : !prev[layerId]
-    }));
-  };
-
   return (
-    <Box sx={{ height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      <MainLayout 
-        activeLayers={activeLayers} 
-        onLayerToggle={handleLayerToggle}
-      />
-    </Box>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <div style={{ height: '100vh', width: '100vw' }}>
+        <MapboxMap />
+      </div>
+    </ThemeProvider>
   );
 }
 

@@ -1,25 +1,29 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import './index.css'
-import { ThemeProvider, createTheme } from '@mui/material'
+import { BrowserRouter } from 'react-router-dom'
+import { ThemeProvider, createTheme } from '@mui/material/styles'
+import CssBaseline from '@mui/material/CssBaseline'
+import App from './App'
 
+// Create a theme instance
 const theme = createTheme({
   palette: {
-    mode: 'dark',
     primary: {
-      main: '#1976d2'
+      main: '#4CAF50',
     },
     secondary: {
-      main: '#dc004e'
-    }
-  }
-})
+      main: '#1976D2',
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <App />
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <App />
+      </ThemeProvider>
+    </BrowserRouter>
   </React.StrictMode>
 )

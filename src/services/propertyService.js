@@ -1,116 +1,207 @@
 import axios from 'axios'
-import { scrapeZillowListings, scrapeRealtorListings, scrapeHampdenRecords } from './scraperService'
+import { API_CONFIG, getHeaders, handleApiError, CACHE_CONFIG } from '../config/api'
 
-const ATTOM_API_BASE_URL = 'https://api.gateway.attomdata.com/propertyapi/v1.0.0'
+const cache = new Map()
 
-// Mock data for testing
-const MOCK_PROPERTIES = [
-  {
-    id: '1',
-    latitude: 42.1015,
-    longitude: -72.5898,
-    address: '1234 Main St, Springfield, MA',
-    assessed_value: 350000,
-    year_built: 1985,
-    additional_data: {
-      zillow_price: '$375,000',
-      realtor_price: '$372,000',
-      last_sale_date: '2021-05-15',
-      last_sale_price: '$340,000'
-    }
-  },
-  {
-    id: '2',
-    latitude: 42.1025,
-    longitude: -72.5878,
-    address: '5678 Oak Ave, Springfield, MA',
-    assessed_value: 425000,
-    year_built: 1992,
-    additional_data: {
-      zillow_price: '$450,000',
-      realtor_price: '$445,000',
-      last_sale_date: '2020-08-22',
-      last_sale_price: '$410,000'
-    }
-  }
-]
+const isCacheValid = (key) => {
+  const cached = cache.get(key)
+  if (!cached) return false
+  return (Date.now() - cached.timestamp) < CACHE_CONFIG.propertyData.duration
+}
 
-export const fetchPropertyData = async (bounds) => {
-  // Return mock data if no API key
-  if (!process.env.VITE_ATTOM_API_KEY || process.env.VITE_ATTOM_API_KEY.includes('your_')) {
-    console.log('Using mock property data')
-    return MOCK_PROPERTIES
-  }
-
+export const getPropertyData = async (lat, lng) => {
   try {
-    // Fetch official property data
-    const response = await axios.get('/property/detail', {
-      baseURL: ATTOM_API_BASE_URL,
-      headers: {
-        'apikey': process.env.VITE_ATTOM_API_KEY,
-        'Accept': 'application/json'
-      },
-      params: {
-        latitude: (bounds.minLat + bounds.maxLat) / 2,
-        longitude: (bounds.minLng + bounds.maxLng) / 2,
-        radius: 3,
-        pageSize: 100
-      }
-    })
-
-    // Try to fetch additional data, but don't fail if scraping fails
-    let zillowData = [], realtorData = []
-    try {
-      [zillowData, realtorData] = await Promise.all([
-        scrapeZillowListings(bounds),
-        scrapeRealtorListings(bounds)
-      ])
-    } catch (error) {
-      console.log('Scraping failed, continuing with official data only')
+    const cacheKey = `${lat},${lng}`
+    if (isCacheValid(cacheKey)) {
+      return cache.get(cacheKey).data
     }
 
-    // Combine official and scraped data (if available)
-    const enrichedProperties = response.data.property.map(prop => {
-      const address = `${prop.address.line1}, ${prop.address.locality}, ${prop.address.countrySubd}`
-      const zillowMatch = zillowData.find(z => z.address.includes(prop.address.line1))
-      const realtorMatch = realtorData.find(r => r.address.includes(prop.address.line1))
-
-      return {
-        id: prop.identifier.obPropId,
-        latitude: parseFloat(prop.location.latitude),
-        longitude: parseFloat(prop.location.longitude),
-        address: address,
-        assessed_value: prop.assessment.assessed,
-        year_built: prop.summary.yearBuilt,
-        additional_data: {
-          zillow_price: zillowMatch?.price,
-          realtor_price: realtorMatch?.price,
-          zillow_details: zillowMatch?.details,
-          realtor_details: realtorMatch?.details
-        }
-      }
+    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/point`, {
+      params: {
+        lat,
+        lon: lng
+      },
+      headers: getHeaders('regrid')
     })
 
-    return enrichedProperties
+    const parcel = response.data.results[0]
+    if (!parcel) return null
+
+    const result = {
+      parcelId: parcel.parcel_id,
+      address: parcel.address,
+      ownerName: parcel.owner_name,
+      landUse: parcel.land_use,
+      zoning: parcel.zoning,
+      lotSize: parcel.lot_size_sqft,
+      yearBuilt: parcel.year_built,
+      lastSale: {
+        date: parcel.last_sale_date,
+        price: parcel.last_sale_price
+      },
+      geometry: parcel.geometry
+    }
+
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    })
+
+    return result
   } catch (error) {
-    console.error('Error fetching property data:', error)
-    return MOCK_PROPERTIES
+    handleApiError(error, 'Regrid Property')
+    return null
   }
 }
 
-// Fetch detailed property info including county records
-export const fetchPropertyDetails = async (address) => {
+export const searchProperties = async (bounds, filters = {}) => {
   try {
-    // Fetch county records
-    const countyRecords = await scrapeHampdenRecords(address)
-    
-    // Return combined data
-    return {
-      address,
-      county_records: countyRecords
+    const cacheKey = JSON.stringify({ bounds, filters })
+    if (isCacheValid(cacheKey)) {
+      return cache.get(cacheKey).data
     }
+
+    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/search`, {
+      params: {
+        bbox: `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
+        ...filters
+      },
+      headers: getHeaders('regrid')
+    })
+
+    const result = {
+      type: 'FeatureCollection',
+      features: response.data.results.map(parcel => ({
+        type: 'Feature',
+        geometry: parcel.geometry,
+        properties: {
+          parcelId: parcel.parcel_id,
+          address: parcel.address,
+          ownerName: parcel.owner_name,
+          landUse: parcel.land_use,
+          zoning: parcel.zoning,
+          lotSize: parcel.lot_size_sqft,
+          yearBuilt: parcel.year_built,
+          lastSaleDate: parcel.last_sale_date,
+          lastSalePrice: parcel.last_sale_price
+        }
+      }))
+    }
+
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    })
+
+    return result
   } catch (error) {
-    console.error('Error fetching property details:', error)
+    handleApiError(error, 'Regrid Search')
     return null
   }
-} 
+}
+
+/**
+ * Fetches property boundaries within the specified bounding box and filters
+ * @param {Object} boundingBox - The geographic bounds to fetch properties within
+ * @param {Object} filters - The filters to apply to the property search
+ * @returns {Promise<GeoJSON>} A GeoJSON object containing property boundaries
+ */
+export const fetchPropertyBoundaries = async (boundingBox, filters) => {
+  try {
+    const cacheKey = JSON.stringify({ boundingBox, filters })
+    if (isCacheValid(cacheKey)) {
+      return cache.get(cacheKey).data
+    }
+
+    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/search`, {
+      params: {
+        bbox: `${boundingBox.west},${boundingBox.south},${boundingBox.east},${boundingBox.north}`,
+        minPrice: filters.priceRange[0],
+        maxPrice: filters.priceRange[1],
+        minYear: filters.yearBuilt[0],
+        maxYear: filters.yearBuilt[1],
+        propertyType: filters.propertyType !== 'all' ? filters.propertyType : undefined,
+        startDate: filters.dateRange[0],
+        endDate: filters.dateRange[1]
+      },
+      headers: getHeaders('regrid')
+    })
+
+    const result = {
+      type: 'FeatureCollection',
+      features: response.data.results.map(parcel => ({
+        type: 'Feature',
+        geometry: parcel.geometry,
+        properties: {
+          parcelId: parcel.parcel_id,
+          address: parcel.address,
+          price: parcel.last_sale_price,
+          yearBuilt: parcel.year_built,
+          propertyType: parcel.land_use,
+          sqft: parcel.lot_size_sqft
+        }
+      }))
+    }
+
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    })
+
+    return result
+  } catch (error) {
+    console.error('Error fetching property boundaries:', error)
+    return {
+      type: 'FeatureCollection',
+      features: []
+    }
+  }
+};
+
+/**
+ * Fetches city boundaries within the specified bounding box
+ * @param {Object} boundingBox - The geographic bounds to fetch boundaries within
+ * @returns {Promise<GeoJSON>} A GeoJSON object containing city boundaries
+ */
+export const fetchCityBoundaries = async (boundingBox) => {
+  try {
+    const cacheKey = JSON.stringify({ type: 'city-boundaries', boundingBox });
+    if (isCacheValid(cacheKey)) {
+      return cache.get(cacheKey).data;
+    }
+
+    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/boundaries/cities`, {
+      params: {
+        bbox: `${boundingBox.west},${boundingBox.south},${boundingBox.east},${boundingBox.north}`
+      },
+      headers: getHeaders('regrid')
+    });
+
+    const result = {
+      type: 'FeatureCollection',
+      features: response.data.results.map(city => ({
+        type: 'Feature',
+        geometry: city.geometry,
+        properties: {
+          cityId: city.city_id,
+          name: city.name,
+          state: city.state,
+          population: city.population
+        }
+      }))
+    };
+
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching city boundaries:', error);
+    return {
+      type: 'FeatureCollection',
+      features: []
+    };
+  }
+}; 

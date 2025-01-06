@@ -20,6 +20,7 @@ import LeadsPanel from './LeadsPanel';
 import FiltersPanel from './FiltersPanel';
 import SolarPermitsPanel from './SolarPermitsPanel';
 import './MapboxMap.css';
+import { cacheData, getCachedData } from '../../utils/cache';
 
 // Ensure Mapbox token is set
 if (!import.meta.env.VITE_MAPBOX_TOKEN) {
@@ -150,6 +151,7 @@ const MapboxMap = () => {
   });
   const [mapStyle, setMapStyle] = useState('satellite');
   const [hoverPopup, setHoverPopup] = useState(null);
+  const [pendingFilterUpdates, setPendingFilterUpdates] = useState(new Set());
 
   const createPopupContent = (feature, layerType, extraDetails = {}) => {
     const { properties } = feature;
@@ -289,19 +291,72 @@ const MapboxMap = () => {
       }
     });
 
-    // Add solar permits source and layer
+    // Add solar permits source and layer with clustering
     map.addSource('solar-permits', {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
         features: []
+      },
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
+      maxzoom: 16,
+      generateId: true,
+      buffer: 128,
+      tolerance: 0.5
+    });
+
+    // Add clustered solar permits layer
+    map.addLayer({
+      id: 'clusters-solar-permits',
+      type: 'circle',
+      source: 'solar-permits',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': [
+          'step',
+          ['get', 'point_count'],
+          '#ffb74d',
+          20, '#ff9800',
+          50, '#f57c00'
+        ],
+        'circle-radius': [
+          'step',
+          ['get', 'point_count'],
+          20,
+          20, 30,
+          50, 40
+        ]
+      },
+      layout: {
+        visibility: activeLayers.solarPermits ? 'visible' : 'none'
       }
     });
 
+    // Add cluster count layer
     map.addLayer({
-      id: 'solar-permits-layer',
+      id: 'cluster-count-solar-permits',
+      type: 'symbol',
+      source: 'solar-permits',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': '{point_count_abbreviated}',
+        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+        visibility: activeLayers.solarPermits ? 'visible' : 'none'
+      },
+      paint: {
+        'text-color': '#ffffff'
+      }
+    });
+
+    // Add unclustered solar permits layer
+    map.addLayer({
+      id: 'unclustered-solar-permits',
       type: 'circle',
       source: 'solar-permits',
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': [
           'interpolate',
@@ -331,19 +386,72 @@ const MapboxMap = () => {
       }
     });
 
-    // Add EV stations source and layer
+    // Add EV stations source with clustering
     map.addSource('ev-stations', {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
         features: []
+      },
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
+      maxzoom: 16,
+      generateId: true,
+      buffer: 128,
+      tolerance: 0.5
+    });
+
+    // Add clustered EV stations layer
+    map.addLayer({
+      id: 'clusters-ev-stations',
+      type: 'circle',
+      source: 'ev-stations',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': [
+          'step',
+          ['get', 'point_count'],
+          '#81c784',
+          20, '#4caf50',
+          50, '#2e7d32'
+        ],
+        'circle-radius': [
+          'step',
+          ['get', 'point_count'],
+          20,
+          20, 30,
+          50, 40
+        ]
+      },
+      layout: {
+        visibility: activeLayers.evStations ? 'visible' : 'none'
       }
     });
 
+    // Add cluster count layer for EV stations
     map.addLayer({
-      id: 'ev-stations-layer',
+      id: 'cluster-count-ev-stations',
       type: 'symbol',
       source: 'ev-stations',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': '{point_count_abbreviated}',
+        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+        visibility: activeLayers.evStations ? 'visible' : 'none'
+      },
+      paint: {
+        'text-color': '#ffffff'
+      }
+    });
+
+    // Add unclustered EV stations layer
+    map.addLayer({
+      id: 'unclustered-ev-stations',
+      type: 'symbol',
+      source: 'ev-stations',
+      filter: ['!', ['has', 'point_count']],
       layout: {
         'icon-image': 'charging-station',
         'icon-size': 1.2,
@@ -699,6 +807,41 @@ const MapboxMap = () => {
     ['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins', 'neighborhoods'].forEach(layerId => {
       addLayerInteractions(`${layerId}-layer`, layerId);
     });
+
+    // Add click handlers for clusters
+    map.on('click', 'clusters-solar-permits', (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['clusters-solar-permits']
+      });
+      const clusterId = features[0].properties.cluster_id;
+      map.getSource('solar-permits').getClusterExpansionZoom(
+        clusterId,
+        (err, zoom) => {
+          if (err) return;
+          map.easeTo({
+            center: features[0].geometry.coordinates,
+            zoom: zoom
+          });
+        }
+      );
+    });
+
+    map.on('click', 'clusters-ev-stations', (e) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['clusters-ev-stations']
+      });
+      const clusterId = features[0].properties.cluster_id;
+      map.getSource('ev-stations').getClusterExpansionZoom(
+        clusterId,
+        (err, zoom) => {
+          if (err) return;
+          map.easeTo({
+            center: features[0].geometry.coordinates,
+            zoom: zoom
+          });
+        }
+      );
+    });
   };
 
   const handleStyleChange = (styleId) => {
@@ -952,23 +1095,31 @@ const MapboxMap = () => {
       map.current.getContainer().appendChild(loadingIndicator);
 
       const loadLayerData = async (layerId, fetchFunction, options = {}) => {
-        if (!activeLayers[layerId]) return;
+        if (!activeLayers[layerId]) {
+          console.debug(`Skipping ${layerId} - layer not active`);
+          return;
+        }
+
+        const loadingId = `loading-${layerId}`;
+        const source = map.current.getSource(layerId);
+        
+        if (!source) {
+          console.warn(`Source not found for layer: ${layerId}`);
+          return;
+        }
 
         try {
-          const source = map.current.getSource(layerId);
-          if (!source) {
-            console.warn(`Source not found for layer: ${layerId}`);
-            return;
-          }
-
-          // Show loading state for the layer
-          if (options.showLoading) {
-            map.current.setLayoutProperty(
-              `${layerId}-layer`,
-              'visibility',
-              'none'
-            );
-          }
+          // Show loading state
+          const loadingEl = document.createElement('div');
+          loadingEl.id = loadingId;
+          loadingEl.className = 'map-loading';
+          loadingEl.innerHTML = `
+            <div class="loading-content">
+              <div class="loading-spinner"></div>
+              <span>Loading ${layerId.replace(/-/g, ' ')}...</span>
+            </div>
+          `;
+          map.current.getContainer().appendChild(loadingEl);
 
           // Get visible bounds
           const bounds = map.current.getBounds();
@@ -979,20 +1130,53 @@ const MapboxMap = () => {
             bounds.getNorth()
           ];
 
-          // Get current zoom level for data resolution
-          const zoom = map.current.getZoom();
-          
-          // Fetch data with bounds and zoom
-          const data = await fetchFunction({
-            bounds: visibleBounds,
-            zoom,
-            filters: filters // Pass current filters
+          // Check cache first
+          const cachedData = getCachedData(layerId, visibleBounds, filters);
+          if (cachedData) {
+            console.debug(`Using cached data for ${layerId}`);
+            source.setData(cachedData);
+            
+            // Update related layers
+            if (layerId === 'ev-stations' && activeLayers.evStationsHeatmap) {
+              const heatSource = map.current.getSource('ev-stations-heat');
+              if (heatSource) {
+                heatSource.setData(cachedData);
+              }
+            }
+            
+            document.getElementById(loadingId)?.remove();
+            return;
+          }
+
+          // Fetch new data with timeout
+          const timeoutDuration = 10000; // 10 seconds
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Request timeout')), timeoutDuration);
           });
 
-          // Update source data
+          const dataPromise = fetchFunction({
+            bounds: visibleBounds,
+            zoom: map.current.getZoom(),
+            filters: filters[layerId] || {}
+          });
+
+          const data = await Promise.race([dataPromise, timeoutPromise]);
+
+          // Validate data structure
+          if (!data || !data.features) {
+            throw new Error('Invalid data structure received');
+          }
+
+          console.debug(`Received ${layerId} data:`, {
+            featureCount: data.features.length,
+            bounds: visibleBounds
+          });
+
+          // Cache and update the source
+          cacheData(layerId, visibleBounds, filters, data);
           source.setData(data);
 
-          // If this is a heatmap or choropleth layer, update the corresponding source
+          // Update related layers
           if (layerId === 'ev-stations' && activeLayers.evStationsHeatmap) {
             const heatSource = map.current.getSource('ev-stations-heat');
             if (heatSource) {
@@ -1000,17 +1184,32 @@ const MapboxMap = () => {
             }
           }
 
-          // Restore visibility
-          if (options.showLoading) {
-            map.current.setLayoutProperty(
-              `${layerId}-layer`,
-              'visibility',
-              activeLayers[layerId] ? 'visible' : 'none'
-            );
-          }
         } catch (error) {
-          console.error(`Error loading data for ${layerId}:`, error);
-          showError(`Failed to load ${layerId} data`);
+          console.error(`Error loading ${layerId} data:`, error);
+          
+          // Show error message
+          const errorEl = document.createElement('div');
+          errorEl.className = 'map-layer-error';
+          errorEl.innerHTML = `
+            <div class="error-content">
+              <span class="error-icon">⚠️</span>
+              <span>Failed to load ${layerId.replace(/-/g, ' ')}</span>
+              <button class="retry-button">Retry</button>
+            </div>
+          `;
+          
+          // Add retry functionality
+          const retryButton = errorEl.querySelector('.retry-button');
+          retryButton.onclick = () => {
+            errorEl.remove();
+            loadLayerData(layerId, fetchFunction, options);
+          };
+
+          map.current.getContainer().appendChild(errorEl);
+          setTimeout(() => errorEl.remove(), 5000);
+        } finally {
+          // Clean up loading indicator
+          document.getElementById(loadingId)?.remove();
         }
       };
 
@@ -1082,26 +1281,99 @@ const MapboxMap = () => {
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
-    // Debounced version of loadMapData
-    const debouncedLoadData = debounce(() => {
-      const bounds = map.current.getBounds();
-      setMapBounds([
-        bounds.getWest(),
-        bounds.getSouth(),
-        bounds.getEast(),
-        bounds.getNorth()
-      ]);
-      loadMapData();
+    // Enhanced debounced version of loadMapData with error boundary
+    const debouncedLoadData = debounce(async () => {
+      if (!map.current) return;
+
+      try {
+        const bounds = map.current.getBounds();
+        const zoom = map.current.getZoom();
+        
+        // Only update data if we've moved significantly
+        const boundsChanged = !mapBounds || (
+          Math.abs(bounds.getWest() - mapBounds[0]) > 0.01 ||
+          Math.abs(bounds.getSouth() - mapBounds[1]) > 0.01 ||
+          Math.abs(bounds.getEast() - mapBounds[2]) > 0.01 ||
+          Math.abs(bounds.getNorth() - mapBounds[3]) > 0.01
+        );
+
+        if (boundsChanged) {
+          setMapBounds([
+            bounds.getWest(),
+            bounds.getSouth(),
+            bounds.getEast(),
+            bounds.getNorth()
+          ]);
+
+          // Show loading state
+          const loadingEl = document.createElement('div');
+          loadingEl.className = 'map-loading';
+          map.current.getContainer().appendChild(loadingEl);
+
+          // Batch load all visible layers
+          await Promise.all(
+            Object.entries(activeLayers)
+              .filter(([, isVisible]) => isVisible)
+              .map(async ([layerId]) => {
+                try {
+                  const source = map.current.getSource(layerId);
+                  if (!source) return;
+
+                  // Check cache first
+                  const cachedData = getCachedData(layerId, [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], filters);
+                  
+                  if (cachedData) {
+                    source.setData(cachedData);
+                    return;
+                  }
+
+                  // Fetch new data if not in cache
+                  const response = await fetch(
+                    `/api/${layerId}?bounds=${bounds.toString()}&zoom=${zoom}&filters=${JSON.stringify(filters[layerId] || {})}`
+                  );
+
+                  if (!response.ok) {
+                    throw new Error(`Failed to fetch ${layerId} data: ${response.statusText}`);
+                  }
+
+                  const data = await response.json();
+                  source.setData(data);
+
+                  // Cache the new data
+                  cacheData(layerId, [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], filters, data);
+                } catch (error) {
+                  console.error(`Error loading ${layerId} data:`, error);
+                  // Show error indicator for this layer
+                  const errorEl = document.createElement('div');
+                  errorEl.className = 'map-layer-error';
+                  errorEl.textContent = `Failed to load ${layerId}`;
+                  map.current.getContainer().appendChild(errorEl);
+                  setTimeout(() => errorEl.remove(), 3000);
+                }
+              })
+          );
+
+          // Remove loading indicator
+          loadingEl.remove();
+        }
+      } catch (error) {
+        console.error('Error in loadMapData:', error);
+        // Show general error message
+        const errorEl = document.createElement('div');
+        errorEl.className = 'map-error';
+        errorEl.textContent = 'Error loading map data';
+        map.current.getContainer().appendChild(errorEl);
+        setTimeout(() => errorEl.remove(), 3000);
+      }
     }, 300);
 
-    // Add event listeners for map movement
+    // Add event listeners
     map.current.on('moveend', debouncedLoadData);
     map.current.on('zoomend', debouncedLoadData);
     
     // Load initial data
     debouncedLoadData();
 
-    // Cleanup
     return () => {
       if (map.current) {
         map.current.off('moveend', debouncedLoadData);
@@ -1111,19 +1383,77 @@ const MapboxMap = () => {
   }, [mapLoaded, activeLayers, filters]);
 
   // Enhanced layer filter function
-  const updateLayerFilters = () => {
-    if (!map.current) return;
+  const updateLayerFilters = useCallback(
+    debounce(() => {
+      if (!map.current || pendingFilterUpdates.size === 0) return;
 
-    const layers = {
-      'solar-permits-layer': createSolarPermitsFilter(),
-      'ev-stations-layer': createEVStationsFilter(),
-      'demographics-layer': createDemographicsFilter(),
-      'utility-boundaries-layer': createUtilityBoundariesFilter()
-    };
+      console.log('Applying batch filter updates');
+      const layersToUpdate = Array.from(pendingFilterUpdates);
+      
+      const filterFunctions = {
+        'solar-permits': createSolarPermitsFilter,
+        'ev-stations': createEVStationsFilter,
+        'demographics': createDemographicsFilter,
+        'utility-boundaries': createUtilityBoundariesFilter
+      };
 
-    Object.entries(layers).forEach(([layerId, filter]) => {
-      if (map.current.getLayer(layerId)) {
-        map.current.setFilter(layerId, filter);
+      // Batch all filter updates into a single style update
+      const batchedUpdates = layersToUpdate.reduce((updates, layerId) => {
+        const filterFunction = filterFunctions[layerId];
+        if (filterFunction) {
+          const mapLayerId = `${layerId}-layer`;
+          if (map.current.getLayer(mapLayerId)) {
+            updates[mapLayerId] = filterFunction();
+          }
+          // Also update cluster layers if they exist
+          if (map.current.getLayer(`clusters-${layerId}`)) {
+            updates[`clusters-${layerId}`] = filterFunction();
+          }
+          if (map.current.getLayer(`unclustered-${layerId}`)) {
+            updates[`unclustered-${layerId}`] = filterFunction();
+          }
+        }
+        return updates;
+      }, {});
+
+      // Apply all filter updates in a single batch
+      if (Object.keys(batchedUpdates).length > 0) {
+        map.current.batch((batch) => {
+          Object.entries(batchedUpdates).forEach(([layerId, filter]) => {
+            batch.setFilter(layerId, filter);
+          });
+        });
+      }
+
+      // Clear pending updates
+      setPendingFilterUpdates(new Set());
+    }, 300),
+    [filters, map, pendingFilterUpdates]
+  );
+
+  // Add this function to queue filter updates
+  const queueFilterUpdate = (layerId) => {
+    setPendingFilterUpdates(prev => new Set([...prev, layerId]));
+  };
+
+  // Update the filters state setter
+  const handleFiltersChange = (newFilters) => {
+    setFilters(newFilters);
+    // Queue updates for affected layers
+    Object.keys(newFilters).forEach(filterKey => {
+      switch (filterKey) {
+        case 'solarPermits':
+          queueFilterUpdate('solar-permits');
+          break;
+        case 'evStations':
+          queueFilterUpdate('ev-stations');
+          break;
+        case 'demographics':
+          queueFilterUpdate('demographics');
+          break;
+        case 'utilities':
+          queueFilterUpdate('utility-boundaries');
+          break;
       }
     });
   };
@@ -1275,14 +1605,28 @@ const MapboxMap = () => {
     return filterArray;
   };
 
-  // Toggle layer visibility
+  // Add performance monitoring
+  const monitorLayerPerformance = (layerId) => {
+    const startTime = performance.now();
+    return {
+      end: () => {
+        const duration = performance.now() - startTime;
+        console.debug(`${layerId} operation took ${duration.toFixed(2)}ms`);
+        return duration;
+      }
+    };
+  };
+
+  // Enhanced toggle layer function
   const toggleLayer = (layerId) => {
     if (!map.current) return;
 
+    const monitor = monitorLayerPerformance(layerId);
+    
     setActiveLayers(prev => {
       const newLayers = { ...prev, [layerId]: !prev[layerId] };
       
-      // Update layer visibility in Mapbox
+      // Update main layer visibility
       const mapLayerId = `${layerId}-layer`;
       if (map.current.getLayer(mapLayerId)) {
         map.current.setLayoutProperty(
@@ -1290,16 +1634,100 @@ const MapboxMap = () => {
           'visibility',
           newLayers[layerId] ? 'visible' : 'none'
         );
-
-        // If this is a data layer, trigger a data refresh
-        if (['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins'].includes(layerId)) {
-          loadMapData();
-        }
       }
 
+      // Update associated layers (clusters, heatmap)
+      const relatedLayers = [
+        `clusters-${layerId}`,
+        `cluster-count-${layerId}`,
+        `unclustered-${layerId}`,
+        `${layerId}-heatmap`
+      ];
+
+      relatedLayers.forEach(relatedId => {
+        if (map.current.getLayer(relatedId)) {
+          map.current.setLayoutProperty(
+            relatedId,
+            'visibility',
+            newLayers[layerId] ? 'visible' : 'none'
+          );
+        }
+      });
+
+      // If enabling layer, ensure data is loaded
+      if (newLayers[layerId]) {
+        console.debug(`Loading data for newly enabled layer: ${layerId}`);
+        loadMapData();
+      }
+
+      monitor.end();
       return newLayers;
     });
   };
+
+  // Enhanced layer initialization
+  const initializeLayerVisibility = () => {
+    if (!map.current) return;
+
+    const monitor = monitorLayerPerformance('initializeLayerVisibility');
+    
+    Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
+      // Update main layer
+      const mapLayerId = `${layerId}-layer`;
+      if (map.current.getLayer(mapLayerId)) {
+        map.current.setLayoutProperty(
+          mapLayerId,
+          'visibility',
+          isVisible ? 'visible' : 'none'
+        );
+      }
+
+      // Update associated layers
+      const relatedLayers = [
+        `clusters-${layerId}`,
+        `cluster-count-${layerId}`,
+        `unclustered-${layerId}`,
+        `${layerId}-heatmap`
+      ];
+
+      relatedLayers.forEach(relatedId => {
+        if (map.current.getLayer(relatedId)) {
+          map.current.setLayoutProperty(
+            relatedId,
+            'visibility',
+            isVisible ? 'visible' : 'none'
+          );
+        }
+      });
+    });
+
+    monitor.end();
+  };
+
+  // Add this to the map load handler
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    const monitor = monitorLayerPerformance('mapLoadSetup');
+
+    // Initialize layer visibility
+    initializeLayerVisibility();
+
+    // Set up performance monitoring for map movements
+    map.current.on('movestart', () => {
+      window._mapMoveStart = performance.now();
+    });
+
+    map.current.on('moveend', () => {
+      if (window._mapMoveStart) {
+        const duration = performance.now() - window._mapMoveStart;
+        console.debug(`Map move took ${duration.toFixed(2)}ms`);
+        delete window._mapMoveStart;
+      }
+    });
+
+    monitor.end();
+  }, [mapLoaded]);
 
   // Toggle panel visibility
   const togglePanel = (panelName) => {

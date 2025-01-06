@@ -99,15 +99,15 @@ const MapboxMap = () => {
     // Solar Permits Filters
     solarPermits: {
       dateRange: [null, null],
-      capacityRange: [0, 50],
+    capacityRange: [0, 50],
       status: 'all', // 'all', 'approved', 'pending', 'rejected'
-      hasBattery: false,
+    hasBattery: false,
       installers: {
         allBankrupt: false,
         expiredBankrupt: false,
-        lumio: false,
-        titanSolar: false,
-        sunpower: false
+    lumio: false,
+    titanSolar: false,
+    sunpower: false
       }
     },
     // EV Stations Filters
@@ -636,29 +636,29 @@ const MapboxMap = () => {
     // Add hover effect for choropleth
     let hoveredStateId = null;
     map.on('mousemove', 'demographics-choropleth', (e) => {
-      if (e.features.length > 0) {
+        if (e.features.length > 0) {
+          if (hoveredStateId !== null) {
+            map.setFeatureState(
+            { source: 'demographics', id: hoveredStateId },
+              { hover: false }
+            );
+          }
+          hoveredStateId = e.features[0].id;
+          map.setFeatureState(
+          { source: 'demographics', id: hoveredStateId },
+            { hover: true }
+          );
+        }
+      });
+
+    map.on('mouseleave', 'demographics-choropleth', () => {
         if (hoveredStateId !== null) {
           map.setFeatureState(
-            { source: 'demographics', id: hoveredStateId },
+          { source: 'demographics', id: hoveredStateId },
             { hover: false }
           );
         }
-        hoveredStateId = e.features[0].id;
-        map.setFeatureState(
-          { source: 'demographics', id: hoveredStateId },
-          { hover: true }
-        );
-      }
-    });
-
-    map.on('mouseleave', 'demographics-choropleth', () => {
-      if (hoveredStateId !== null) {
-        map.setFeatureState(
-          { source: 'demographics', id: hoveredStateId },
-          { hover: false }
-        );
-      }
-      hoveredStateId = null;
+        hoveredStateId = null;
     });
 
     // Initialize layer visibility based on activeLayers state
@@ -720,15 +720,15 @@ const MapboxMap = () => {
               <div class="tooltip-content">
                 <strong>${feature.properties.name || 'EV Station'}</strong>
                 <div>${feature.properties.numChargers || 'N/A'} chargers</div>
-              </div>
-            `;
+          </div>
+        `;
             break;
           case 'utility-boundaries':
             tooltipContent = `
               <div class="tooltip-content">
                 <strong>${feature.properties.utilityName || 'Utility Area'}</strong>
-              </div>
-            `;
+          </div>
+        `;
             break;
         }
 
@@ -754,9 +754,9 @@ const MapboxMap = () => {
       // Click for detailed popup
       map.current.on('click', layerId, async (e) => {
         if (e.features.length === 0) return;
-        
-        const feature = e.features[0];
-        const coordinates = feature.geometry.coordinates.slice();
+      
+      const feature = e.features[0];
+      const coordinates = feature.geometry.coordinates.slice();
         const layerType = layerId.replace('-layer', '');
 
         // Remove any existing tooltip
@@ -778,25 +778,25 @@ const MapboxMap = () => {
           }
 
           // Create detailed popup with extra information
-          new mapboxgl.Popup({
-            closeButton: true,
-            closeOnClick: true,
-            maxWidth: '300px',
-            className: 'custom-popup'
-          })
-            .setLngLat(coordinates)
+      new mapboxgl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: '300px',
+        className: 'custom-popup'
+      })
+        .setLngLat(coordinates)
             .setHTML(createPopupContent(feature, layerType, extraDetails))
             .addTo(map.current);
         } catch (error) {
           console.error('Error fetching additional details:', error);
           // Show basic popup if fetch fails
-          new mapboxgl.Popup({
-            closeButton: true,
-            closeOnClick: true,
-            maxWidth: '300px',
-            className: 'custom-popup'
-          })
-            .setLngLat(coordinates)
+      new mapboxgl.Popup({
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: '300px',
+        className: 'custom-popup'
+      })
+        .setLngLat(coordinates)
             .setHTML(createPopupContent(feature, layerType))
             .addTo(map.current);
         }
@@ -1084,10 +1084,10 @@ const MapboxMap = () => {
   };
 
   // Load data when bounds change
-  const loadMapData = async () => {
-    if (!map.current || !mapBounds) return;
+    const loadMapData = async () => {
+      if (!map.current || !mapBounds) return;
 
-    try {
+      try {
       // Show loading indicator
       const loadingIndicator = document.createElement('div');
       loadingIndicator.className = 'map-loading-indicator';
@@ -1257,9 +1257,9 @@ const MapboxMap = () => {
       const indicator = map.current.getContainer().querySelector('.map-loading-indicator');
       if (indicator) {
         indicator.remove();
-      }
-    } catch (error) {
-      console.error('Error loading map data:', error);
+        }
+      } catch (error) {
+        console.error('Error loading map data:', error);
       showError('Failed to load map data');
     }
   };
@@ -1627,14 +1627,14 @@ const MapboxMap = () => {
       const newLayers = { ...prev, [layerId]: !prev[layerId] };
       
       // Update main layer visibility
-      const mapLayerId = `${layerId}-layer`;
-      if (map.current.getLayer(mapLayerId)) {
-        map.current.setLayoutProperty(
-          mapLayerId,
-          'visibility',
-          newLayers[layerId] ? 'visible' : 'none'
-        );
-      }
+        const mapLayerId = `${layerId}-layer`;
+        if (map.current.getLayer(mapLayerId)) {
+          map.current.setLayoutProperty(
+            mapLayerId,
+            'visibility',
+            newLayers[layerId] ? 'visible' : 'none'
+          );
+        }
 
       // Update associated layers (clusters, heatmap)
       const relatedLayers = [
@@ -1784,7 +1784,7 @@ const MapboxMap = () => {
       return null;
     }
 
-    return (
+  return (
       <div className="layer-legend">
         {activeLayers.evStationsHeatmap && (
           <div className="legend-section">
@@ -1823,7 +1823,7 @@ const MapboxMap = () => {
         activePanel={activePanel}
       />
       {renderLegend()}
-      <div className="panel-container">
+          <div className="panel-container">
         <div className={`panel ${visiblePanels.layers ? 'visible' : ''}`}>
           <div className="panel-header">
             <h3>Layers</h3>

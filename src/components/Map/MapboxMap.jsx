@@ -11,8 +11,9 @@ import {
   fetchMoveIns,
   fetchUtilityBoundaries,
   fetchEVStations
-} from '../../services/solarscoutService';
-import { fetchPropertyBoundaries, fetchCityBoundaries } from '../../services/propertyService';
+} from '../../services/gamechangrrService';
+import { fetchPropertyBoundaries } from '../../services/propertyService';
+import { fetchCityBoundaries } from '../../services/boundaryService';
 import { API_CONFIG } from '../../config/api';
 import MapControls from './MapControls';
 import LayersPanel from './LayersPanel';
@@ -21,6 +22,7 @@ import FiltersPanel from './FiltersPanel';
 import SolarPermitsPanel from './SolarPermitsPanel';
 import './MapboxMap.css';
 import { cacheData, getCachedData } from '../../utils/cache';
+import { LayerManager } from './layers/LayerManager';
 
 // Ensure Mapbox token is set
 if (!import.meta.env.VITE_MAPBOX_TOKEN) {
@@ -46,11 +48,11 @@ const MAP_STYLES = {
 const GEOCODER_OPTIONS = {
   accessToken: mapboxgl.accessToken,
   mapboxgl: mapboxgl,
-  marker: false,
+  marker: true, // Enable marker for better visibility
   placeholder: 'Search addresses, cities, or areas',
-  bbox: [-125.0, 24.396308, -66.93457, 49.384358], // Limit to contiguous US
-  countries: ['us'],
-  types: ['address', 'neighborhood', 'locality', 'place', 'postcode'],
+  bbox: [-72.7242, 42.0824, -72.4771, 42.1718], // Tighter bounding box for Springfield
+  countries: 'us',
+  types: 'address,place,neighborhood',
   minLength: 3,
   fuzzyMatch: true,
   routing: true,
@@ -58,16 +60,60 @@ const GEOCODER_OPTIONS = {
     speed: 1.2,
     curve: 1,
     easing: (t) => t,
-  },
-  proximity: {
-    longitude: -98.5795,
-    latitude: 39.8283
+    zoom: 17 // Zoom in closer for addresses
+  }
+};
+
+// Springfield bounds for validation
+const SPRINGFIELD_BOUNDS = {
+  north: 42.1718,
+  south: 42.0824,
+  east: -72.4771,
+  west: -72.7242
+};
+
+// Helper function to validate Springfield address
+const isInSpringfield = (lat, lng) => {
+  return lat >= SPRINGFIELD_BOUNDS.south &&
+         lat <= SPRINGFIELD_BOUNDS.north &&
+         lng >= SPRINGFIELD_BOUNDS.west &&
+         lng <= SPRINGFIELD_BOUNDS.east;
+};
+
+// Function to look up specific address
+const lookupAddress = async (address) => {
+  try {
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?` +
+      `access_token=${mapboxgl.accessToken}&` +
+      `bbox=${SPRINGFIELD_BOUNDS.west},${SPRINGFIELD_BOUNDS.south},${SPRINGFIELD_BOUNDS.east},${SPRINGFIELD_BOUNDS.north}&` +
+      'types=address&limit=1'
+    );
+    
+    const data = await response.json();
+    if (data.features && data.features.length > 0) {
+      const location = data.features[0];
+      const [lng, lat] = location.center;
+      
+      if (isInSpringfield(lat, lng)) {
+        return {
+          center: location.center,
+          address: location.place_name,
+          coordinates: [lng, lat]
+        };
+      }
+    }
+    throw new Error('Address not found in Springfield');
+  } catch (error) {
+    console.error('Error looking up address:', error);
+    return null;
   }
 };
 
 const MapboxMap = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
+  const layerManager = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapBounds, setMapBounds] = useState(null);
   const [activePanel, setActivePanel] = useState(null);
@@ -262,586 +308,305 @@ const MapboxMap = () => {
     }
   };
 
-  const initializeLayers = (map) => {
-    // Add utility boundaries source and layer
-    map.addSource('utility-boundaries', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
+  const addLayerInteractions = (map, layerId, sourceId) => {
+    if (!map || !map.getLayer(layerId)) {
+      console.debug(`Skipping interactions for ${layerId} - layer not found`);
+      return;
+    }
 
-    map.addLayer({
-      id: 'utility-boundaries-layer',
-      type: 'fill',
-      source: 'utility-boundaries',
-      paint: {
-        'fill-color': '#4a90e2',
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.3,
-          0.15
-        ],
-        'fill-outline-color': '#4a90e2'
-      },
-      layout: {
-        visibility: activeLayers.utilityBoundaries ? 'visible' : 'none'
-      }
-    });
-
-    // Add solar permits source and layer with clustering
-    map.addSource('solar-permits', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      },
-      cluster: true,
-      clusterMaxZoom: 14,
-      clusterRadius: 50,
-      maxzoom: 16,
-      generateId: true,
-      buffer: 128,
-      tolerance: 0.5
-    });
-
-    // Add clustered solar permits layer
-    map.addLayer({
-      id: 'clusters-solar-permits',
-      type: 'circle',
-      source: 'solar-permits',
-      filter: ['has', 'point_count'],
-      paint: {
-        'circle-color': [
-          'step',
-          ['get', 'point_count'],
-          '#ffb74d',
-          20, '#ff9800',
-          50, '#f57c00'
-        ],
-        'circle-radius': [
-          'step',
-          ['get', 'point_count'],
-          20,
-          20, 30,
-          50, 40
-        ]
-      },
-      layout: {
-        visibility: activeLayers.solarPermits ? 'visible' : 'none'
-      }
-    });
-
-    // Add cluster count layer
-    map.addLayer({
-      id: 'cluster-count-solar-permits',
-      type: 'symbol',
-      source: 'solar-permits',
-      filter: ['has', 'point_count'],
-      layout: {
-        'text-field': '{point_count_abbreviated}',
-        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-        'text-size': 12,
-        visibility: activeLayers.solarPermits ? 'visible' : 'none'
-      },
-      paint: {
-        'text-color': '#ffffff'
-      }
-    });
-
-    // Add unclustered solar permits layer
-    map.addLayer({
-      id: 'unclustered-solar-permits',
-      type: 'circle',
-      source: 'solar-permits',
-      filter: ['!', ['has', 'point_count']],
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          12, 4,
-          16, 6,
-          18, 8
-        ],
-        'circle-color': '#ff9900',
-        'circle-stroke-width': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          2,
-          1.5
-        ],
-        'circle-stroke-color': '#ffffff',
-        'circle-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          1,
-          0.9
-        ]
-      },
-      layout: {
-        visibility: activeLayers.solarPermits ? 'visible' : 'none'
-      }
-    });
-
-    // Add EV stations source with clustering
-    map.addSource('ev-stations', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      },
-      cluster: true,
-      clusterMaxZoom: 14,
-      clusterRadius: 50,
-      maxzoom: 16,
-      generateId: true,
-      buffer: 128,
-      tolerance: 0.5
-    });
-
-    // Add clustered EV stations layer
-    map.addLayer({
-      id: 'clusters-ev-stations',
-      type: 'circle',
-      source: 'ev-stations',
-      filter: ['has', 'point_count'],
-      paint: {
-        'circle-color': [
-          'step',
-          ['get', 'point_count'],
-          '#81c784',
-          20, '#4caf50',
-          50, '#2e7d32'
-        ],
-        'circle-radius': [
-          'step',
-          ['get', 'point_count'],
-          20,
-          20, 30,
-          50, 40
-        ]
-      },
-      layout: {
-        visibility: activeLayers.evStations ? 'visible' : 'none'
-      }
-    });
-
-    // Add cluster count layer for EV stations
-    map.addLayer({
-      id: 'cluster-count-ev-stations',
-      type: 'symbol',
-      source: 'ev-stations',
-      filter: ['has', 'point_count'],
-      layout: {
-        'text-field': '{point_count_abbreviated}',
-        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-        'text-size': 12,
-        visibility: activeLayers.evStations ? 'visible' : 'none'
-      },
-      paint: {
-        'text-color': '#ffffff'
-      }
-    });
-
-    // Add unclustered EV stations layer
-    map.addLayer({
-      id: 'unclustered-ev-stations',
-      type: 'symbol',
-      source: 'ev-stations',
-      filter: ['!', ['has', 'point_count']],
-      layout: {
-        'icon-image': 'charging-station',
-        'icon-size': 1.2,
-        'icon-allow-overlap': true,
-        visibility: activeLayers.evStations ? 'visible' : 'none'
-      }
-    });
-
-    // Add move-ins source and layer
-    map.addSource('move-ins', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    map.addLayer({
-      id: 'move-ins-layer',
-      type: 'circle',
-      source: 'move-ins',
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          12, 4,
-          16, 6,
-          18, 8
-        ],
-        'circle-color': '#33cc33',
-        'circle-stroke-width': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          2,
-          1.5
-        ],
-        'circle-stroke-color': '#ffffff',
-        'circle-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          1,
-          0.9
-        ]
-      },
-      layout: {
-        visibility: activeLayers.moveIns ? 'visible' : 'none'
-      }
-    });
-
-    // Add neighborhoods source and layer
-    map.addSource('neighborhoods', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    map.addLayer({
-      id: 'neighborhoods-layer',
-      type: 'fill',
-      source: 'neighborhoods',
-      paint: {
-        'fill-color': '#088',
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.3,
-          0.15
-        ],
-        'fill-outline-color': '#088'
-      },
-      layout: {
-        visibility: activeLayers.neighborhoodInsights ? 'visible' : 'none'
-      }
-    });
-
-    // Add EV stations heatmap source and layer
-    map.addSource('ev-stations-heat', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    map.addLayer({
-      id: 'ev-stations-heatmap',
-      type: 'heatmap',
-      source: 'ev-stations-heat',
-      paint: {
-        // Increase weight based on number of chargers
-        'heatmap-weight': [
-          'interpolate',
-          ['linear'],
-          ['get', 'numChargers'],
-          1, 0.2,
-          10, 1
-        ],
-        // Increase intensity as zoom level increases
-        'heatmap-intensity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          0, 1,
-          15, 3
-        ],
-        // Assign color values based on density
-        'heatmap-color': [
-          'interpolate',
-          ['linear'],
-          ['heatmap-density'],
-          0, 'rgba(33,102,172,0)',
-          0.2, 'rgb(103,169,207)',
-          0.4, 'rgb(209,229,240)',
-          0.6, 'rgb(253,219,199)',
-          0.8, 'rgb(239,138,98)',
-          1, 'rgb(178,24,43)'
-        ],
-        // Adjust radius based on zoom level
-        'heatmap-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          0, 2,
-          15, 20
-        ],
-        // Decrease opacity based on zoom level
-        'heatmap-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          7, 1,
-          15, 0.5
-        ]
-      },
-      layout: {
-        visibility: activeLayers.evStationsHeatmap ? 'visible' : 'none'
-      }
-    });
-
-    // Add demographics choropleth source and layer
-    map.addSource('demographics', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    map.addLayer({
-      id: 'demographics-choropleth',
-      type: 'fill',
-      source: 'demographics',
-      paint: {
-        'fill-color': [
-          'interpolate',
-          ['linear'],
-          ['get', 'medianIncome'],
-          0, '#FFEDA0',
-          25000, '#FED976',
-          50000, '#FEB24C',
-          75000, '#FD8D3C',
-          100000, '#FC4E2A',
-          150000, '#E31A1C',
-          200000, '#BD0026'
-        ],
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.8,
-          0.6
-        ],
-        'fill-outline-color': '#000000'
-      },
-      layout: {
-        visibility: activeLayers.demographicsChoropleth ? 'visible' : 'none'
-      }
-    });
-
-    // Add hover effect for choropleth
     let hoveredStateId = null;
-    map.on('mousemove', 'demographics-choropleth', (e) => {
-        if (e.features.length > 0) {
-          if (hoveredStateId !== null) {
-            map.setFeatureState(
-            { source: 'demographics', id: hoveredStateId },
-              { hover: false }
-            );
-          }
-          hoveredStateId = e.features[0].id;
-          map.setFeatureState(
-          { source: 'demographics', id: hoveredStateId },
-            { hover: true }
-          );
-        }
-      });
-
-    map.on('mouseleave', 'demographics-choropleth', () => {
-        if (hoveredStateId !== null) {
-          map.setFeatureState(
-          { source: 'demographics', id: hoveredStateId },
-            { hover: false }
-          );
-        }
-        hoveredStateId = null;
+    const tooltip = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      className: 'tooltip-popup'
     });
 
-    // Initialize layer visibility based on activeLayers state
-    Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
-      const mapLayerId = `${layerId}-layer`;
-      if (map.getLayer(mapLayerId)) {
-        map.setLayoutProperty(
-          mapLayerId,
-          'visibility',
-          isVisible ? 'visible' : 'none'
+    // Mouse enter
+    map.on('mouseenter', layerId, (e) => {
+      if (!e.features || e.features.length === 0) return;
+      map.getCanvas().style.cursor = 'pointer';
+      
+      if (hoveredStateId) {
+        map.setFeatureState(
+          { source: sourceId, id: hoveredStateId },
+          { hover: false }
         );
       }
+      hoveredStateId = e.features[0].id;
+      map.setFeatureState(
+        { source: sourceId, id: hoveredStateId },
+        { hover: true }
+      );
+
+      // Show tooltip
+      const feature = e.features[0];
+      const coordinates = feature.geometry.coordinates.slice();
+      const layerType = layerId.replace('-layer', '');
+      
+      // Create tooltip content based on layer type
+      let tooltipContent = '';
+      switch (layerType) {
+        case 'solar-permits':
+          tooltipContent = `
+            <div class="tooltip-content">
+              <strong>${feature.properties.address || 'Solar Permit'}</strong>
+              <div>${feature.properties.systemSize || 'N/A'} kW</div>
+            </div>
+          `;
+          break;
+        case 'ev-stations':
+          tooltipContent = `
+            <div class="tooltip-content">
+              <strong>${feature.properties.name || 'EV Station'}</strong>
+              <div>${feature.properties.numChargers || 'N/A'} chargers</div>
+            </div>
+          `;
+          break;
+        case 'utility-boundaries':
+          tooltipContent = `
+            <div class="tooltip-content">
+              <strong>${feature.properties.utilityName || 'Utility Area'}</strong>
+            </div>
+          `;
+          break;
+        default:
+          tooltipContent = `
+            <div class="tooltip-content">
+              <strong>${feature.properties.name || 'Feature'}</strong>
+            </div>
+          `;
+      }
+
+      tooltip
+        .setLngLat(coordinates)
+        .setHTML(tooltipContent)
+        .addTo(map);
     });
 
-    // Add hover effects and popups
-    const addLayerInteractions = (layerId, sourceId) => {
-      let hoveredStateId = null;
-      let tooltip = new mapboxgl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-        className: 'tooltip-popup'
-      });
-
-      // Mouse enter
-      map.current.on('mouseenter', layerId, (e) => {
-        if (e.features.length === 0) return;
-        map.current.getCanvas().style.cursor = 'pointer';
-        
-        if (hoveredStateId) {
-          map.current.setFeatureState(
-            { source: sourceId, id: hoveredStateId },
-            { hover: false }
-          );
-        }
-        hoveredStateId = e.features[0].id;
-        map.current.setFeatureState(
+    // Mouse leave
+    map.on('mouseleave', layerId, () => {
+      map.getCanvas().style.cursor = '';
+      if (hoveredStateId) {
+        map.setFeatureState(
           { source: sourceId, id: hoveredStateId },
-          { hover: true }
+          { hover: false }
         );
+      }
+      hoveredStateId = null;
+      tooltip.remove();
+    });
 
-        // Show tooltip
-        const feature = e.features[0];
-        const coordinates = feature.geometry.coordinates.slice();
-        const layerType = layerId.replace('-layer', '');
-        
-        // Create tooltip content based on layer type
-        let tooltipContent = '';
-        switch (layerType) {
-          case 'solar-permits':
-            tooltipContent = `
-              <div class="tooltip-content">
-                <strong>${feature.properties.address || 'Solar Permit'}</strong>
-                <div>${feature.properties.systemSize || 'N/A'} kW</div>
-              </div>
-            `;
-            break;
-          case 'ev-stations':
-            tooltipContent = `
-              <div class="tooltip-content">
-                <strong>${feature.properties.name || 'EV Station'}</strong>
-                <div>${feature.properties.numChargers || 'N/A'} chargers</div>
-          </div>
-        `;
-            break;
-          case 'utility-boundaries':
-            tooltipContent = `
-              <div class="tooltip-content">
-                <strong>${feature.properties.utilityName || 'Utility Area'}</strong>
-          </div>
-        `;
-            break;
-        }
-
-        tooltip
-          .setLngLat(coordinates)
-          .setHTML(tooltipContent)
-          .addTo(map.current);
-      });
-
-      // Mouse leave
-      map.current.on('mouseleave', layerId, () => {
-        map.current.getCanvas().style.cursor = '';
-        if (hoveredStateId) {
-          map.current.setFeatureState(
-            { source: sourceId, id: hoveredStateId },
-            { hover: false }
-          );
-        }
-        hoveredStateId = null;
-        tooltip.remove();
-      });
-
-      // Click for detailed popup
-      map.current.on('click', layerId, async (e) => {
-        if (e.features.length === 0) return;
+    // Click for detailed popup
+    map.on('click', layerId, async (e) => {
+      if (!e.features || e.features.length === 0) return;
       
       const feature = e.features[0];
       const coordinates = feature.geometry.coordinates.slice();
-        const layerType = layerId.replace('-layer', '');
+      const layerType = layerId.replace('-layer', '');
 
-        // Remove any existing tooltip
-        tooltip.remove();
-        
-        try {
-          // Fetch additional details if needed
-          let extraDetails = {};
-          switch (layerType) {
-            case 'solar-permits':
-              extraDetails = await fetchSolarPermitDetails(feature.properties.id);
-              break;
-            case 'ev-stations':
-              extraDetails = await fetchEVStationDetails(feature.properties.id);
-              break;
-            case 'utility-boundaries':
-              extraDetails = await fetchUtilityDetails(feature.properties.id);
-              break;
-          }
+      // Remove any existing tooltip
+      tooltip.remove();
+      
+      try {
+        // Create detailed popup
+        new mapboxgl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          maxWidth: '300px',
+          className: 'custom-popup'
+        })
+          .setLngLat(coordinates)
+          .setHTML(createPopupContent(feature, layerType))
+          .addTo(map);
+      } catch (error) {
+        console.error('Error creating popup:', error);
+      }
+    });
+  };
 
-          // Create detailed popup with extra information
-      new mapboxgl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        maxWidth: '300px',
-        className: 'custom-popup'
-      })
-        .setLngLat(coordinates)
-            .setHTML(createPopupContent(feature, layerType, extraDetails))
-            .addTo(map.current);
-        } catch (error) {
-          console.error('Error fetching additional details:', error);
-          // Show basic popup if fetch fails
-      new mapboxgl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        maxWidth: '300px',
-        className: 'custom-popup'
-      })
-        .setLngLat(coordinates)
-            .setHTML(createPopupContent(feature, layerType))
-            .addTo(map.current);
+  const initializeLayers = (map) => {
+    if (!map) {
+      console.error('Map not initialized');
+      return;
+    }
+
+    console.log('Initializing map layers...');
+
+    try {
+      // Initialize all sources first with empty GeoJSON
+      const emptyGeojson = { type: 'FeatureCollection', features: [] };
+      
+      const sources = {
+        'solar-permits': {
+          type: 'geojson',
+          data: emptyGeojson,
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 50,
+          maxzoom: 16,
+          generateId: true
+        },
+        'utility-boundaries': {
+          type: 'geojson',
+          data: emptyGeojson
+        },
+        'city-boundaries': {
+          type: 'geojson',
+          data: emptyGeojson
+        },
+        'neighborhoods': {
+          type: 'geojson',
+          data: emptyGeojson
+        },
+        'ev-stations': {
+          type: 'geojson',
+          data: emptyGeojson,
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 50
+        }
+      };
+
+      // Add all sources first
+      Object.entries(sources).forEach(([id, source]) => {
+        if (!map.getSource(id)) {
+          console.log(`Adding source: ${id}`);
+          map.addSource(id, source);
         }
       });
-    };
 
-    // Add interactions to all interactive layers
-    ['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins', 'neighborhoods'].forEach(layerId => {
-      addLayerInteractions(`${layerId}-layer`, layerId);
-    });
+      // Wait for sources to be added
+      map.once('idle', () => {
+        // Define all layers
+        const layerConfigs = {
+          'solar-permits': [
+            {
+              id: 'clusters-solar-permits',
+              type: 'circle',
+              source: 'solar-permits',
+              filter: ['has', 'point_count'],
+              paint: {
+                'circle-color': [
+                  'step',
+                  ['get', 'point_count'],
+                  '#ffb74d',
+                  20, '#ff9800',
+                  50, '#f57c00'
+                ],
+                'circle-radius': [
+                  'step',
+                  ['get', 'point_count'],
+                  20,
+                  20, 30,
+                  50, 40
+                ]
+              }
+            },
+            {
+              id: 'cluster-count-solar-permits',
+              type: 'symbol',
+              source: 'solar-permits',
+              filter: ['has', 'point_count'],
+              layout: {
+                'text-field': '{point_count_abbreviated}',
+                'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                'text-size': 12
+              },
+              paint: {
+                'text-color': '#ffffff'
+              }
+            },
+            {
+              id: 'unclustered-solar-permits',
+              type: 'circle',
+              source: 'solar-permits',
+              filter: ['!', ['has', 'point_count']],
+              paint: {
+                'circle-radius': [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  12, 4,
+                  16, 6,
+                  18, 8
+                ],
+                'circle-color': '#ff9900',
+                'circle-stroke-width': 1.5,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 0.9
+              }
+            }
+          ],
+          'utility-boundaries': [
+            {
+              id: 'utility-boundaries-layer',
+              type: 'fill',
+              source: 'utility-boundaries',
+              paint: {
+                'fill-color': '#4a90e2',
+                'fill-opacity': 0.2,
+                'fill-outline-color': '#4a90e2'
+              }
+            }
+          ],
+          'city-boundaries': [
+            {
+              id: 'city-boundaries-layer',
+              type: 'fill',
+              source: 'city-boundaries',
+              paint: {
+                'fill-color': '#2196F3',
+                'fill-opacity': 0.2,
+                'fill-outline-color': '#1976D2'
+              }
+            }
+          ],
+          'neighborhoods': [
+            {
+              id: 'neighborhoods-layer',
+              type: 'fill',
+              source: 'neighborhoods',
+              paint: {
+                'fill-color': '#088',
+                'fill-opacity': 0.2,
+                'fill-outline-color': '#088'
+              }
+            }
+          ]
+        };
 
-    // Add click handlers for clusters
-    map.on('click', 'clusters-solar-permits', (e) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['clusters-solar-permits']
-      });
-      const clusterId = features[0].properties.cluster_id;
-      map.getSource('solar-permits').getClusterExpansionZoom(
-        clusterId,
-        (err, zoom) => {
-          if (err) return;
-          map.easeTo({
-            center: features[0].geometry.coordinates,
-            zoom: zoom
+        // Add all layers
+        Object.entries(layerConfigs).forEach(([sourceId, layers]) => {
+          layers.forEach(layer => {
+            if (!map.getLayer(layer.id)) {
+              console.log(`Adding layer: ${layer.id}`);
+              map.addLayer({
+                ...layer,
+                layout: {
+                  visibility: activeLayers[sourceId.replace('-layer', '')] ? 'visible' : 'none'
+                }
+              });
+            }
           });
-        }
-      );
-    });
+        });
 
-    map.on('click', 'clusters-ev-stations', (e) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['clusters-ev-stations']
-      });
-      const clusterId = features[0].properties.cluster_id;
-      map.getSource('ev-stations').getClusterExpansionZoom(
-        clusterId,
-        (err, zoom) => {
-          if (err) return;
-          map.easeTo({
-            center: features[0].geometry.coordinates,
-            zoom: zoom
+        // Add interactions for each layer
+        Object.entries(layerConfigs).forEach(([sourceId, layers]) => {
+          layers.forEach(layer => {
+            if (map.getLayer(layer.id)) {
+              addLayerInteractions(map, layer.id, sourceId);
+            }
           });
-        }
-      );
-    });
+        });
+
+        // Initial data load for visible layers
+        loadMapData();
+
+        console.log('Layers initialized successfully');
+      });
+    } catch (error) {
+      console.error('Error initializing layers:', error);
+    }
   };
 
   const handleStyleChange = (styleId) => {
@@ -853,62 +618,32 @@ const MapboxMap = () => {
 
   const initializeGeocoder = () => {
     const geocoder = new MapboxGeocoder({
-      accessToken: mapboxgl.accessToken,
-      mapboxgl: mapboxgl,
-      countries: 'us',
-      types: 'address,place,region,postcode',
-      placeholder: 'Search for a location',
-      marker: false,
-      collapsed: false,
-      clearOnBlur: false,
-      minLength: 3,
-      limit: 5,
-      flyTo: {
-        speed: 1.2,
-        curve: 1,
-        easing: (t) => t,
-      },
-      render: (item) => {
-        const { place_name, place_type, text } = item;
-        const icon = place_type[0] === 'address' ? '🏠' :
-                    place_type[0] === 'place' ? '🏙️' :
-                    place_type[0] === 'region' ? '🗺️' : '📍';
-
-        return `<div class="custom-geocoder-result">
-                  <div class="result-icon">${icon}</div>
-                  <div class="result-content">
-                    <div class="result-primary">${text}</div>
-                    <div class="result-secondary">${place_name}</div>
-                  </div>
-                </div>`;
-      }
+      ...GEOCODER_OPTIONS,
+      collapsed: true,
+      clearOnBlur: true
     });
 
-    // Add the geocoder to the map
-    if (map.current) {
-      map.current.addControl(geocoder, 'top-right');
-    }
-
-    // Handle result selection
+    // Add result handler
     geocoder.on('result', (e) => {
       const { result } = e;
-      const { center, bbox } = result;
-
-      if (bbox) {
-        map.current.fitBounds(bbox, {
-          padding: 50,
-          maxZoom: 15
-        });
-      } else {
-        map.current.flyTo({
-          center,
-          zoom: 15
-        });
+      const { center, place_type } = result;
+      
+      // Adjust zoom based on result type
+      let zoom = 17; // Default for addresses
+      if (place_type.includes('neighborhood')) {
+        zoom = 15;
+      } else if (place_type.includes('place')) {
+        zoom = 13;
       }
 
-      // Update visible data based on new location
-      loadMapData();
+      map.current.flyTo({
+        center: center,
+        zoom: zoom,
+        essential: true
+      });
     });
+
+    map.current.addControl(geocoder, 'top-right');
 
     // Handle clear button click
     geocoder.on('clear', () => {
@@ -954,7 +689,7 @@ const MapboxMap = () => {
         container: mapContainer.current,
         style: MAP_STYLES[mapStyle].style,
         center: [-72.589811, 42.102535],
-        zoom: 13
+        zoom: 12
       });
 
       // Add navigation control (zoom buttons) first
@@ -967,7 +702,7 @@ const MapboxMap = () => {
       // Create style switcher
       const styleSwitcher = document.createElement('div');
       styleSwitcher.className = 'map-style-switcher';
-      
+
       // Add both buttons in order
       const buttons = [MAP_STYLES.satellite, MAP_STYLES.streets];
       buttons.forEach(style => {
@@ -993,18 +728,27 @@ const MapboxMap = () => {
       styleControl.appendChild(styleSwitcher);
       map.current.getContainer().querySelector('.mapboxgl-ctrl-top-right').appendChild(styleControl);
 
-      // Enhanced geocoder setup with collapsed state
+      // Enhanced geocoder setup
       const geocoder = new MapboxGeocoder({
         ...GEOCODER_OPTIONS,
-        collapsed: true, // Start collapsed
-        clearOnBlur: true, // Clear when focus is lost
+        collapsed: true,
+        clearOnBlur: true
       });
+
       map.current.addControl(geocoder, 'top-right');
 
       map.current.on('load', () => {
         console.log('Map loaded successfully');
         setMapLoaded(true);
-        initializeLayers(map.current);
+        
+        // Initialize layer manager
+        layerManager.current = new LayerManager(map.current);
+        layerManager.current.initialize();
+        
+        // Initialize layer visibility based on activeLayers state
+        Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
+          layerManager.current.setLayerVisibility(layerId, isVisible);
+        });
       });
 
       map.current.on('error', (e) => {
@@ -1035,6 +779,9 @@ const MapboxMap = () => {
     }
 
     return () => {
+      if (layerManager.current) {
+        layerManager.current.cleanup();
+      }
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -1085,184 +832,15 @@ const MapboxMap = () => {
 
   // Load data when bounds change
     const loadMapData = async () => {
-      if (!map.current || !mapBounds) return;
+      if (!map.current || !mapLoaded || !layerManager.current) return;
 
       try {
-      // Show loading indicator
-      const loadingIndicator = document.createElement('div');
-      loadingIndicator.className = 'map-loading-indicator';
-      loadingIndicator.innerHTML = '<div class="spinner"></div>';
-      map.current.getContainer().appendChild(loadingIndicator);
-
-      const loadLayerData = async (layerId, fetchFunction, options = {}) => {
-        if (!activeLayers[layerId]) {
-          console.debug(`Skipping ${layerId} - layer not active`);
-          return;
-        }
-
-        const loadingId = `loading-${layerId}`;
-        const source = map.current.getSource(layerId);
-        
-        if (!source) {
-          console.warn(`Source not found for layer: ${layerId}`);
-          return;
-        }
-
-        try {
-          // Show loading state
-          const loadingEl = document.createElement('div');
-          loadingEl.id = loadingId;
-          loadingEl.className = 'map-loading';
-          loadingEl.innerHTML = `
-            <div class="loading-content">
-              <div class="loading-spinner"></div>
-              <span>Loading ${layerId.replace(/-/g, ' ')}...</span>
-            </div>
-          `;
-          map.current.getContainer().appendChild(loadingEl);
-
-          // Get visible bounds
-          const bounds = map.current.getBounds();
-          const visibleBounds = [
-            bounds.getWest(),
-            bounds.getSouth(),
-            bounds.getEast(),
-            bounds.getNorth()
-          ];
-
-          // Check cache first
-          const cachedData = getCachedData(layerId, visibleBounds, filters);
-          if (cachedData) {
-            console.debug(`Using cached data for ${layerId}`);
-            source.setData(cachedData);
-            
-            // Update related layers
-            if (layerId === 'ev-stations' && activeLayers.evStationsHeatmap) {
-              const heatSource = map.current.getSource('ev-stations-heat');
-              if (heatSource) {
-                heatSource.setData(cachedData);
-              }
-            }
-            
-            document.getElementById(loadingId)?.remove();
-            return;
-          }
-
-          // Fetch new data with timeout
-          const timeoutDuration = 10000; // 10 seconds
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Request timeout')), timeoutDuration);
-          });
-
-          const dataPromise = fetchFunction({
-            bounds: visibleBounds,
-            zoom: map.current.getZoom(),
-            filters: filters[layerId] || {}
-          });
-
-          const data = await Promise.race([dataPromise, timeoutPromise]);
-
-          // Validate data structure
-          if (!data || !data.features) {
-            throw new Error('Invalid data structure received');
-          }
-
-          console.debug(`Received ${layerId} data:`, {
-            featureCount: data.features.length,
-            bounds: visibleBounds
-          });
-
-          // Cache and update the source
-          cacheData(layerId, visibleBounds, filters, data);
-          source.setData(data);
-
-          // Update related layers
-          if (layerId === 'ev-stations' && activeLayers.evStationsHeatmap) {
-            const heatSource = map.current.getSource('ev-stations-heat');
-            if (heatSource) {
-              heatSource.setData(data);
-            }
-          }
-
-        } catch (error) {
-          console.error(`Error loading ${layerId} data:`, error);
-          
-          // Show error message
-          const errorEl = document.createElement('div');
-          errorEl.className = 'map-layer-error';
-          errorEl.innerHTML = `
-            <div class="error-content">
-              <span class="error-icon">⚠️</span>
-              <span>Failed to load ${layerId.replace(/-/g, ' ')}</span>
-              <button class="retry-button">Retry</button>
-            </div>
-          `;
-          
-          // Add retry functionality
-          const retryButton = errorEl.querySelector('.retry-button');
-          retryButton.onclick = () => {
-            errorEl.remove();
-            loadLayerData(layerId, fetchFunction, options);
-          };
-
-          map.current.getContainer().appendChild(errorEl);
-          setTimeout(() => errorEl.remove(), 5000);
-        } finally {
-          // Clean up loading indicator
-          document.getElementById(loadingId)?.remove();
-        }
-      };
-
-      // Load demographic data for choropleth
-      const loadDemographicData = async () => {
-        if (!activeLayers.demographicsChoropleth) return;
-
-        try {
-          const bounds = map.current.getBounds();
-          const data = await fetchDemographicData({
-            bounds: [
-              bounds.getWest(),
-              bounds.getSouth(),
-              bounds.getEast(),
-              bounds.getNorth()
-            ],
-            filters: filters.demographics
-          });
-
-          const source = map.current.getSource('demographics');
-          if (source) {
-            source.setData(data);
-          }
-        } catch (error) {
-          console.error('Error loading demographic data:', error);
-          showError('Failed to load demographic data');
-        }
-      };
-
-      // Load all active layer data in parallel
-      await Promise.all([
-        loadLayerData('utility-boundaries', fetchUtilityBoundaries, { showLoading: true }),
-        loadLayerData('solar-permits', fetchSolarInstallations, { showLoading: true }),
-        loadLayerData('ev-stations', fetchEVStations, { showLoading: true }),
-        loadLayerData('move-ins', fetchMoveIns),
-        loadLayerData('neighborhoods', fetchNeighborhoods),
-        loadLayerData('city-boundaries', fetchCityBoundaries),
-        loadDemographicData()
-      ]);
-
-      // Update filters after data is loaded
-      updateLayerFilters();
-
-      // Remove loading indicator
-      const indicator = map.current.getContainer().querySelector('.map-loading-indicator');
-      if (indicator) {
-        indicator.remove();
-        }
+        const bounds = map.current.getBounds();
+        await layerManager.current.loadData(bounds, filters);
       } catch (error) {
         console.error('Error loading map data:', error);
-      showError('Failed to load map data');
-    }
-  };
+      }
+    };
 
   // Add error display function
   const showError = (message) => {
@@ -1466,8 +1044,8 @@ const MapboxMap = () => {
     if (solarPermits.dateRange[0] && solarPermits.dateRange[1]) {
       filterArray.push([
         'all',
-        ['>=', ['get', 'applicationDate'], solarPermits.dateRange[0]],
-        ['<=', ['get', 'applicationDate'], solarPermits.dateRange[1]]
+        ['>=', ['get', 'date_installed'], solarPermits.dateRange[0]],
+        ['<=', ['get', 'date_installed'], solarPermits.dateRange[1]]
       ]);
     }
 
@@ -1475,8 +1053,8 @@ const MapboxMap = () => {
     if (solarPermits.capacityRange[0] !== 0 || solarPermits.capacityRange[1] !== 50) {
       filterArray.push([
         'all',
-        ['>=', ['get', 'systemSize'], solarPermits.capacityRange[0]],
-        ['<=', ['get', 'systemSize'], solarPermits.capacityRange[1]]
+        ['>=', ['get', 'capacity'], solarPermits.capacityRange[0]],
+        ['<=', ['get', 'capacity'], solarPermits.capacityRange[1]]
       ]);
     }
 
@@ -1487,21 +1065,21 @@ const MapboxMap = () => {
 
     // Battery filter
     if (solarPermits.hasBattery) {
-      filterArray.push(['==', ['get', 'hasBattery'], true]);
+      filterArray.push(['==', ['get', 'has_battery'], true]);
     }
 
     // Installer filters
     const installerFilters = [];
-    Object.entries(solarPermits.installers).forEach(([key, value]) => {
+    Object.entries(solarPermits.installers || {}).forEach(([key, value]) => {
       if (value) {
         switch (key) {
           case 'allBankrupt':
-            installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
+            installerFilters.push(['==', ['get', 'installer_status'], 'bankrupt']);
             break;
           case 'expiredBankrupt':
             installerFilters.push([
               'all',
-              ['==', ['get', 'installerStatus'], 'bankrupt'],
+              ['==', ['get', 'installer_status'], 'bankrupt'],
               ['==', ['get', 'status'], 'expired']
             ]);
             break;
@@ -1515,7 +1093,7 @@ const MapboxMap = () => {
       filterArray.push(['any', ...installerFilters]);
     }
 
-    return filterArray;
+    return filterArray.length > 1 ? filterArray : null;
   };
 
   const createEVStationsFilter = () => {
@@ -1619,48 +1197,13 @@ const MapboxMap = () => {
 
   // Enhanced toggle layer function
   const toggleLayer = (layerId) => {
-    if (!map.current) return;
+    if (!map.current || !layerManager.current) return;
 
-    const monitor = monitorLayerPerformance(layerId);
+    console.log(`Toggling layer: ${layerId}`);
     
     setActiveLayers(prev => {
       const newLayers = { ...prev, [layerId]: !prev[layerId] };
-      
-      // Update main layer visibility
-        const mapLayerId = `${layerId}-layer`;
-        if (map.current.getLayer(mapLayerId)) {
-          map.current.setLayoutProperty(
-            mapLayerId,
-            'visibility',
-            newLayers[layerId] ? 'visible' : 'none'
-          );
-        }
-
-      // Update associated layers (clusters, heatmap)
-      const relatedLayers = [
-        `clusters-${layerId}`,
-        `cluster-count-${layerId}`,
-        `unclustered-${layerId}`,
-        `${layerId}-heatmap`
-      ];
-
-      relatedLayers.forEach(relatedId => {
-        if (map.current.getLayer(relatedId)) {
-          map.current.setLayoutProperty(
-            relatedId,
-            'visibility',
-            newLayers[layerId] ? 'visible' : 'none'
-          );
-        }
-      });
-
-      // If enabling layer, ensure data is loaded
-      if (newLayers[layerId]) {
-        console.debug(`Loading data for newly enabled layer: ${layerId}`);
-        loadMapData();
-      }
-
-      monitor.end();
+      layerManager.current.setLayerVisibility(layerId, newLayers[layerId]);
       return newLayers;
     });
   };
@@ -1814,6 +1357,27 @@ const MapboxMap = () => {
       </div>
     );
   };
+
+  // Add this to your initialization
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    // Look up Roosevelt Ave address
+    lookupAddress('1007 Roosevelt Ave, Springfield, MA').then(result => {
+      if (result) {
+        map.current.flyTo({
+          center: result.center,
+          zoom: 17,
+          essential: true
+        });
+        
+        // Add a marker
+        new mapboxgl.Marker()
+          .setLngLat(result.center)
+          .addTo(map.current);
+      }
+    });
+  }, [mapLoaded]);
 
   return (
     <div className="map-container">

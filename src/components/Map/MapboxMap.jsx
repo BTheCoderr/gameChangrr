@@ -41,12 +41,36 @@ const MAP_STYLES = {
   }
 };
 
+// Add custom geocoder options
+const GEOCODER_OPTIONS = {
+  accessToken: mapboxgl.accessToken,
+  mapboxgl: mapboxgl,
+  marker: false,
+  placeholder: 'Search addresses, cities, or areas',
+  bbox: [-125.0, 24.396308, -66.93457, 49.384358], // Limit to contiguous US
+  countries: ['us'],
+  types: ['address', 'neighborhood', 'locality', 'place', 'postcode'],
+  minLength: 3,
+  fuzzyMatch: true,
+  routing: true,
+  flyTo: {
+    speed: 1.2,
+    curve: 1,
+    easing: (t) => t,
+  },
+  proximity: {
+    longitude: -98.5795,
+    latitude: 39.8283
+  }
+};
+
 const MapboxMap = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapBounds, setMapBounds] = useState(null);
   const [activePanel, setActivePanel] = useState(null);
+  const [visiblePanels, setVisiblePanels] = useState({});
   const [activeLayers, setActiveLayers] = useState({
     moveIns: false,
     cityBoundaries: false,
@@ -54,6 +78,8 @@ const MapboxMap = () => {
     utilityBoundaries: false,
     solarPermits: false,
     evStations: false,
+    evStationsHeatmap: false,
+    demographicsChoropleth: false,
     roofPermits: false,
     hvacPermits: false,
     poolPermits: false,
@@ -69,25 +95,63 @@ const MapboxMap = () => {
   });
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [filters, setFilters] = useState({
-    dateRange: [null, null],
-    propertyType: 'all',
-    priceRange: [0, 1000000],
-    yearBuilt: [1900, new Date().getFullYear()],
-    capacityRange: [0, 50],
-    expiredPermits: false,
-    recentPermits: false,
-    hasBattery: false,
-    installers: {
-      allBankrupt: false,
-      expiredBankrupt: false,
-      lumio: false,
-      titanSolar: false,
-      sunpower: false
+    // Solar Permits Filters
+    solarPermits: {
+      dateRange: [null, null],
+      capacityRange: [0, 50],
+      status: 'all', // 'all', 'approved', 'pending', 'rejected'
+      hasBattery: false,
+      installers: {
+        allBankrupt: false,
+        expiredBankrupt: false,
+        lumio: false,
+        titanSolar: false,
+        sunpower: false
+      }
+    },
+    // EV Stations Filters
+    evStations: {
+      minChargers: 2,
+      status: 'active',
+      connectorTypes: [], // Array of selected connector types
+      network: 'all' // 'all' or specific network
+    },
+    // Demographics Filters
+    demographics: {
+      income: {
+        min: 0,
+        max: 200000
+      },
+      age: {
+        min: 0,
+        max: 100
+      },
+      homeownership: 'all', // 'all', 'owned', 'rented'
+      education: 'all' // 'all', 'highschool', 'college', 'graduate'
+    },
+    // Property Filters
+    properties: {
+      type: 'all', // 'all', 'residential', 'commercial'
+      priceRange: [0, 1000000],
+      yearBuilt: [1900, new Date().getFullYear()],
+      squareFootage: [0, 10000]
+    },
+    // Move-Ins Filters
+    moveIns: {
+      dateRange: [null, null],
+      propertyType: 'all'
+    },
+    // Utility Boundaries Filters
+    utilities: {
+      provider: 'all',
+      rateType: 'all',
+      hasSolarProgram: null
     }
   });
   const [mapStyle, setMapStyle] = useState('satellite');
+  const [hoverPopup, setHoverPopup] = useState(null);
 
-  const createPopupContent = (feature, layerType) => {
+  const createPopupContent = (feature, layerType, extraDetails = {}) => {
     const { properties } = feature;
     const formatDate = (dateStr) => {
       if (!dateStr) return 'N/A';
@@ -129,6 +193,18 @@ const MapboxMap = () => {
                 <span class="value">${formatDate(properties.applicationDate)}</span>
               </div>
               ${properties.hasBattery ? '<div class="popup-detail battery-included">Includes Battery Storage</div>' : ''}
+              ${extraDetails.estimatedCost ? `
+                <div class="popup-detail">
+                  <span class="label">Estimated Cost:</span>
+                  <span class="value">${formatCurrency(extraDetails.estimatedCost)}</span>
+                </div>
+              ` : ''}
+              ${extraDetails.incentives ? `
+                <div class="popup-detail">
+                  <span class="label">Available Incentives:</span>
+                  <span class="value">${formatCurrency(extraDetails.incentives)}</span>
+                </div>
+              ` : ''}
             </div>
           </div>
         `;
@@ -276,64 +352,7 @@ const MapboxMap = () => {
       }
     });
 
-    // Add city boundaries source and layer
-    map.addSource('city-boundaries', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    map.addLayer({
-      id: 'city-boundaries-layer',
-      type: 'line',
-      source: 'city-boundaries',
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': 1.5,
-        'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.4, 16, 0.8],
-        'line-dasharray': [2, 2]
-      }
-    });
-
-    // Add property boundaries source and layer
-    map.addSource('property-boundaries', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: []
-      }
-    });
-
-    // Add property fill layer for hover effect
-    map.addLayer({
-      id: 'property-boundaries-fill',
-      type: 'fill',
-      source: 'property-boundaries',
-      paint: {
-        'fill-color': '#FFD700',
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.2,
-          0
-        ]
-      }
-    });
-
-    map.addLayer({
-      id: 'property-boundaries-layer',
-      type: 'line',
-      source: 'property-boundaries',
-      paint: {
-        'line-color': '#FFD700',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 17, 1],
-        'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.6, 17, 0.8]
-      }
-    });
-
-    // Add move-ins source and layer with enhanced styling
+    // Add move-ins source and layer
     map.addSource('move-ins', {
       type: 'geojson',
       data: {
@@ -368,15 +387,14 @@ const MapboxMap = () => {
           ['boolean', ['feature-state', 'hover'], false],
           1,
           0.9
-        ],
-        'circle-stroke-opacity': 1
+        ]
       },
       layout: {
         visibility: activeLayers.moveIns ? 'visible' : 'none'
       }
     });
 
-    // Add neighborhood insights with improved styling
+    // Add neighborhoods source and layer
     map.addSource('neighborhoods', {
       type: 'geojson',
       data: {
@@ -404,8 +422,8 @@ const MapboxMap = () => {
       }
     });
 
-    // Add solar installations with enhanced styling
-    map.addSource('solar-installations', {
+    // Add EV stations heatmap source and layer
+    map.addSource('ev-stations-heat', {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
@@ -414,189 +432,273 @@ const MapboxMap = () => {
     });
 
     map.addLayer({
-      id: 'solar-installations-layer',
-      type: 'circle',
-      source: 'solar-installations',
+      id: 'ev-stations-heatmap',
+      type: 'heatmap',
+      source: 'ev-stations-heat',
       paint: {
-        'circle-radius': [
+        // Increase weight based on number of chargers
+        'heatmap-weight': [
+          'interpolate',
+          ['linear'],
+          ['get', 'numChargers'],
+          1, 0.2,
+          10, 1
+        ],
+        // Increase intensity as zoom level increases
+        'heatmap-intensity': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          12, 4,
-          16, 6,
-          18, 8
+          0, 1,
+          15, 3
         ],
-        'circle-color': '#ff9900',
-        'circle-stroke-width': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          2,
-          1.5
+        // Assign color values based on density
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0, 'rgba(33,102,172,0)',
+          0.2, 'rgb(103,169,207)',
+          0.4, 'rgb(209,229,240)',
+          0.6, 'rgb(253,219,199)',
+          0.8, 'rgb(239,138,98)',
+          1, 'rgb(178,24,43)'
         ],
-        'circle-stroke-color': '#ffffff',
-        'circle-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          1,
-          0.9
+        // Adjust radius based on zoom level
+        'heatmap-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          0, 2,
+          15, 20
         ],
-        'circle-stroke-opacity': 1
+        // Decrease opacity based on zoom level
+        'heatmap-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          7, 1,
+          15, 0.5
+        ]
       },
       layout: {
-        visibility: activeLayers.solarInstallations ? 'visible' : 'none'
+        visibility: activeLayers.evStationsHeatmap ? 'visible' : 'none'
       }
     });
 
-    // Add hover effects and popups for solar permits layer
+    // Add demographics choropleth source and layer
+    map.addSource('demographics', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    map.addLayer({
+      id: 'demographics-choropleth',
+      type: 'fill',
+      source: 'demographics',
+      paint: {
+        'fill-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'medianIncome'],
+          0, '#FFEDA0',
+          25000, '#FED976',
+          50000, '#FEB24C',
+          75000, '#FD8D3C',
+          100000, '#FC4E2A',
+          150000, '#E31A1C',
+          200000, '#BD0026'
+        ],
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          0.8,
+          0.6
+        ],
+        'fill-outline-color': '#000000'
+      },
+      layout: {
+        visibility: activeLayers.demographicsChoropleth ? 'visible' : 'none'
+      }
+    });
+
+    // Add hover effect for choropleth
     let hoveredStateId = null;
-    const addLayerInteractions = (layerId, sourceId) => {
-      // Mouse enter - show tooltip
-      map.on('mouseenter', layerId, (e) => {
-        if (e.features.length === 0) return;
-        map.getCanvas().style.cursor = 'pointer';
-        
-        // Set hover state
-        if (hoveredStateId) {
+    map.on('mousemove', 'demographics-choropleth', (e) => {
+      if (e.features.length > 0) {
+        if (hoveredStateId !== null) {
           map.setFeatureState(
-            { source: sourceId, id: hoveredStateId },
+            { source: 'demographics', id: hoveredStateId },
             { hover: false }
           );
         }
         hoveredStateId = e.features[0].id;
         map.setFeatureState(
+          { source: 'demographics', id: hoveredStateId },
+          { hover: true }
+        );
+      }
+    });
+
+    map.on('mouseleave', 'demographics-choropleth', () => {
+      if (hoveredStateId !== null) {
+        map.setFeatureState(
+          { source: 'demographics', id: hoveredStateId },
+          { hover: false }
+        );
+      }
+      hoveredStateId = null;
+    });
+
+    // Initialize layer visibility based on activeLayers state
+    Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
+      const mapLayerId = `${layerId}-layer`;
+      if (map.getLayer(mapLayerId)) {
+        map.setLayoutProperty(
+          mapLayerId,
+          'visibility',
+          isVisible ? 'visible' : 'none'
+        );
+      }
+    });
+
+    // Add hover effects and popups
+    const addLayerInteractions = (layerId, sourceId) => {
+      let hoveredStateId = null;
+      let tooltip = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        className: 'tooltip-popup'
+      });
+
+      // Mouse enter
+      map.current.on('mouseenter', layerId, (e) => {
+        if (e.features.length === 0) return;
+        map.current.getCanvas().style.cursor = 'pointer';
+        
+        if (hoveredStateId) {
+          map.current.setFeatureState(
+            { source: sourceId, id: hoveredStateId },
+            { hover: false }
+          );
+        }
+        hoveredStateId = e.features[0].id;
+        map.current.setFeatureState(
           { source: sourceId, id: hoveredStateId },
           { hover: true }
         );
+
+        // Show tooltip
+        const feature = e.features[0];
+        const coordinates = feature.geometry.coordinates.slice();
+        const layerType = layerId.replace('-layer', '');
+        
+        // Create tooltip content based on layer type
+        let tooltipContent = '';
+        switch (layerType) {
+          case 'solar-permits':
+            tooltipContent = `
+              <div class="tooltip-content">
+                <strong>${feature.properties.address || 'Solar Permit'}</strong>
+                <div>${feature.properties.systemSize || 'N/A'} kW</div>
+              </div>
+            `;
+            break;
+          case 'ev-stations':
+            tooltipContent = `
+              <div class="tooltip-content">
+                <strong>${feature.properties.name || 'EV Station'}</strong>
+                <div>${feature.properties.numChargers || 'N/A'} chargers</div>
+              </div>
+            `;
+            break;
+          case 'utility-boundaries':
+            tooltipContent = `
+              <div class="tooltip-content">
+                <strong>${feature.properties.utilityName || 'Utility Area'}</strong>
+              </div>
+            `;
+            break;
+        }
+
+        tooltip
+          .setLngLat(coordinates)
+          .setHTML(tooltipContent)
+          .addTo(map.current);
       });
 
-      // Mouse leave - hide tooltip
-      map.on('mouseleave', layerId, () => {
-        map.getCanvas().style.cursor = '';
+      // Mouse leave
+      map.current.on('mouseleave', layerId, () => {
+        map.current.getCanvas().style.cursor = '';
         if (hoveredStateId) {
-          map.setFeatureState(
+          map.current.setFeatureState(
             { source: sourceId, id: hoveredStateId },
             { hover: false }
           );
         }
         hoveredStateId = null;
+        tooltip.remove();
       });
 
-      // Click - show popup
-      map.on('click', layerId, (e) => {
+      // Click for detailed popup
+      map.current.on('click', layerId, async (e) => {
         if (e.features.length === 0) return;
         
-        const coordinates = e.features[0].geometry.coordinates.slice();
+        const feature = e.features[0];
+        const coordinates = feature.geometry.coordinates.slice();
         const layerType = layerId.replace('-layer', '');
+
+        // Remove any existing tooltip
+        tooltip.remove();
         
-        // Create popup
-        new mapboxgl.Popup({
-          closeButton: true,
-          closeOnClick: true,
-          maxWidth: '300px',
-          className: 'custom-popup'
-        })
-          .setLngLat(coordinates)
-          .setHTML(createPopupContent(e.features[0], layerType))
-          .addTo(map);
+        try {
+          // Fetch additional details if needed
+          let extraDetails = {};
+          switch (layerType) {
+            case 'solar-permits':
+              extraDetails = await fetchSolarPermitDetails(feature.properties.id);
+              break;
+            case 'ev-stations':
+              extraDetails = await fetchEVStationDetails(feature.properties.id);
+              break;
+            case 'utility-boundaries':
+              extraDetails = await fetchUtilityDetails(feature.properties.id);
+              break;
+          }
+
+          // Create detailed popup with extra information
+          new mapboxgl.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            maxWidth: '300px',
+            className: 'custom-popup'
+          })
+            .setLngLat(coordinates)
+            .setHTML(createPopupContent(feature, layerType, extraDetails))
+            .addTo(map.current);
+        } catch (error) {
+          console.error('Error fetching additional details:', error);
+          // Show basic popup if fetch fails
+          new mapboxgl.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            maxWidth: '300px',
+            className: 'custom-popup'
+          })
+            .setLngLat(coordinates)
+            .setHTML(createPopupContent(feature, layerType))
+            .addTo(map.current);
+        }
       });
     };
 
     // Add interactions to all interactive layers
-    ['solar-permits', 'ev-stations', 'utility-boundaries'].forEach(layerId => {
+    ['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins', 'neighborhoods'].forEach(layerId => {
       addLayerInteractions(`${layerId}-layer`, layerId);
     });
-
-    // Update layer filters based on user input
-    const updateLayerFilters = () => {
-      if (!map.getLayer('solar-permits-layer')) return;
-
-      // Solar permits filters
-      const solarFilters = ['all'];
-      
-      // Date range filter
-      if (filters.dateRange[0] && filters.dateRange[1]) {
-        solarFilters.push([
-          'all',
-          ['>=', ['get', 'applicationDate'], filters.dateRange[0]],
-          ['<=', ['get', 'applicationDate'], filters.dateRange[1]]
-        ]);
-      }
-
-      // System capacity filter
-      if (filters.capacityRange[0] !== 0 || filters.capacityRange[1] !== 50) {
-        solarFilters.push([
-          'all',
-          ['>=', ['get', 'systemSize'], filters.capacityRange[0]],
-          ['<=', ['get', 'systemSize'], filters.capacityRange[1]]
-        ]);
-      }
-
-      // Permit features filters
-      if (filters.expiredPermits) {
-        solarFilters.push(['==', ['get', 'status'], 'expired']);
-      }
-      if (filters.recentPermits) {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const sixtyDaysAgo = new Date();
-        sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-        
-        solarFilters.push([
-          'all',
-          ['>=', ['get', 'applicationDate'], sixtyDaysAgo.toISOString()],
-          ['<=', ['get', 'applicationDate'], thirtyDaysAgo.toISOString()]
-        ]);
-      }
-      if (filters.hasBattery) {
-        solarFilters.push(['==', ['get', 'hasBattery'], true]);
-      }
-
-      // Installer filters
-      if (filters.installers) {
-        const installerFilters = [];
-        if (filters.installers.allBankrupt) {
-          installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
-        }
-        if (filters.installers.expiredBankrupt) {
-          installerFilters.push([
-            'all',
-            ['==', ['get', 'installerStatus'], 'bankrupt'],
-            ['==', ['get', 'status'], 'expired']
-          ]);
-        }
-        if (filters.installers.lumio) {
-          installerFilters.push(['==', ['get', 'installer'], 'Lumio']);
-        }
-        if (filters.installers.titanSolar) {
-          installerFilters.push(['==', ['get', 'installer'], 'Titan Solar Power']);
-        }
-        if (filters.installers.sunpower) {
-          installerFilters.push(['==', ['get', 'installer'], 'Sunpower']);
-        }
-        
-        if (installerFilters.length > 0) {
-          solarFilters.push(['any', ...installerFilters]);
-        }
-      }
-
-      // Apply filters to layer
-      map.setFilter('solar-permits-layer', solarFilters);
-
-      // EV stations filters
-      if (map.getLayer('ev-stations-layer')) {
-        const evFilters = ['all'];
-        // Add minimum chargers filter
-        evFilters.push(['>=', ['get', 'numChargers'], 2]);
-        map.setFilter('ev-stations-layer', evFilters);
-      }
-    };
-
-    // Update filters when they change
-    useEffect(() => {
-      if (map.current && mapLoaded) {
-        updateLayerFilters();
-      }
-    }, [filters, mapLoaded]);
   };
 
   const handleStyleChange = (styleId) => {
@@ -606,11 +708,105 @@ const MapboxMap = () => {
     }
   };
 
+  const initializeGeocoder = () => {
+    const geocoder = new MapboxGeocoder({
+      accessToken: mapboxgl.accessToken,
+      mapboxgl: mapboxgl,
+      countries: 'us',
+      types: 'address,place,region,postcode',
+      placeholder: 'Search for a location',
+      marker: false,
+      collapsed: false,
+      clearOnBlur: false,
+      minLength: 3,
+      limit: 5,
+      flyTo: {
+        speed: 1.2,
+        curve: 1,
+        easing: (t) => t,
+      },
+      render: (item) => {
+        const { place_name, place_type, text } = item;
+        const icon = place_type[0] === 'address' ? '🏠' :
+                    place_type[0] === 'place' ? '🏙️' :
+                    place_type[0] === 'region' ? '🗺️' : '📍';
+
+        return `<div class="custom-geocoder-result">
+                  <div class="result-icon">${icon}</div>
+                  <div class="result-content">
+                    <div class="result-primary">${text}</div>
+                    <div class="result-secondary">${place_name}</div>
+                  </div>
+                </div>`;
+      }
+    });
+
+    // Add the geocoder to the map
+    if (map.current) {
+      map.current.addControl(geocoder, 'top-right');
+    }
+
+    // Handle result selection
+    geocoder.on('result', (e) => {
+      const { result } = e;
+      const { center, bbox } = result;
+
+      if (bbox) {
+        map.current.fitBounds(bbox, {
+          padding: 50,
+          maxZoom: 15
+        });
+      } else {
+        map.current.flyTo({
+          center,
+          zoom: 15
+        });
+      }
+
+      // Update visible data based on new location
+      loadMapData();
+    });
+
+    // Handle clear button click
+    geocoder.on('clear', () => {
+      // Reset map view or perform other cleanup
+      map.current.flyTo({
+        center: [-98.5795, 39.8283], // US center
+        zoom: 4
+      });
+    });
+
+    // Handle loading state
+    geocoder.on('loading', () => {
+      const searchIcon = document.querySelector('.mapboxgl-ctrl-geocoder--icon-search');
+      if (searchIcon) {
+        searchIcon.classList.add('loading');
+      }
+    });
+
+    geocoder.on('results', () => {
+      const searchIcon = document.querySelector('.mapboxgl-ctrl-geocoder--icon-search');
+      if (searchIcon) {
+        searchIcon.classList.remove('loading');
+      }
+    });
+
+    // Handle error state
+    geocoder.on('error', () => {
+      const searchIcon = document.querySelector('.mapboxgl-ctrl-geocoder--icon-search');
+      if (searchIcon) {
+        searchIcon.classList.remove('loading');
+      }
+      // Optionally show error message
+    });
+  };
+
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     try {
+      console.log('Initializing map...');
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: MAP_STYLES[mapStyle].style,
@@ -618,7 +814,14 @@ const MapboxMap = () => {
         zoom: 13
       });
 
-      // Create style switcher first
+      // Add navigation control (zoom buttons) first
+      const nav = new mapboxgl.NavigationControl({
+        showCompass: false, // Only show zoom controls
+        visualizePitch: false
+      });
+      map.current.addControl(nav, 'top-left');
+
+      // Create style switcher
       const styleSwitcher = document.createElement('div');
       styleSwitcher.className = 'map-style-switcher';
       
@@ -647,53 +850,13 @@ const MapboxMap = () => {
       styleControl.appendChild(styleSwitcher);
       map.current.getContainer().querySelector('.mapboxgl-ctrl-top-right').appendChild(styleControl);
 
-      // Add navigation control
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-      // Add geocoder last
+      // Enhanced geocoder setup with collapsed state
       const geocoder = new MapboxGeocoder({
-        accessToken: mapboxgl.accessToken,
-        mapboxgl: mapboxgl,
-        marker: false,
-        placeholder: 'Search addresses'
+        ...GEOCODER_OPTIONS,
+        collapsed: true, // Start collapsed
+        clearOnBlur: true, // Clear when focus is lost
       });
-
-      // Add geocoder and make it collapsible
-      const geocoderContainer = geocoder.onAdd(map.current);
-      geocoderContainer.className += ' collapsed';
-
-      // Add click handler to toggle collapse
-      const searchIcon = geocoderContainer.querySelector('.mapboxgl-ctrl-geocoder--icon-search');
-      const searchInput = geocoderContainer.querySelector('input');
-
-      // Make the entire container clickable when collapsed
-      geocoderContainer.addEventListener('click', (e) => {
-        if (geocoderContainer.classList.contains('collapsed')) {
-          geocoderContainer.classList.remove('collapsed');
-          searchInput.focus();
-        }
-      });
-
-      // Handle search icon click separately
-      searchIcon.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (!geocoderContainer.classList.contains('collapsed')) {
-          geocoderContainer.classList.add('collapsed');
-        }
-      });
-
-      // Collapse search when input loses focus and is empty
-      searchInput.addEventListener('blur', (e) => {
-        // Small delay to allow for icon clicks
-        setTimeout(() => {
-          if (!searchInput.value && !geocoderContainer.contains(document.activeElement)) {
-            geocoderContainer.classList.add('collapsed');
-          }
-        }, 200);
-      });
-
-      // Add the geocoder container to the map
-      map.current.getContainer().querySelector('.mapboxgl-ctrl-top-right').appendChild(geocoderContainer);
+      map.current.addControl(geocoder, 'top-right');
 
       map.current.on('load', () => {
         console.log('Map loaded successfully');
@@ -736,11 +899,58 @@ const MapboxMap = () => {
     };
   }, []);
 
+  // Add effect to log mapLoaded changes
+  useEffect(() => {
+    console.log('mapLoaded state changed:', mapLoaded);
+  }, [mapLoaded]);
+
+  // Helper function to get appropriate zoom level based on result type
+  const getZoomLevelForType = (category) => {
+    switch (category) {
+      case 'address':
+        return 18;
+      case 'neighborhood':
+        return 15;
+      case 'locality':
+        return 13;
+      case 'place':
+        return 11;
+      case 'postcode':
+        return 12;
+      default:
+        return 14;
+    }
+  };
+
+  // Helper function to get icon for result type
+  const getResultIcon = (category) => {
+    switch (category) {
+      case 'address':
+        return '🏠';
+      case 'neighborhood':
+        return '🏘️';
+      case 'locality':
+        return '🌆';
+      case 'place':
+        return '🌎';
+      case 'postcode':
+        return '📍';
+      default:
+        return '📍';
+    }
+  };
+
   // Load data when bounds change
   const loadMapData = async () => {
     if (!map.current || !mapBounds) return;
 
     try {
+      // Show loading indicator
+      const loadingIndicator = document.createElement('div');
+      loadingIndicator.className = 'map-loading-indicator';
+      loadingIndicator.innerHTML = '<div class="spinner"></div>';
+      map.current.getContainer().appendChild(loadingIndicator);
+
       const loadLayerData = async (layerId, fetchFunction, options = {}) => {
         if (!activeLayers[layerId]) return;
 
@@ -751,7 +961,7 @@ const MapboxMap = () => {
             return;
           }
 
-          // Show loading state
+          // Show loading state for the layer
           if (options.showLoading) {
             map.current.setLayoutProperty(
               `${layerId}-layer`,
@@ -760,8 +970,35 @@ const MapboxMap = () => {
             );
           }
 
-          const data = await fetchFunction(mapBounds, filters);
+          // Get visible bounds
+          const bounds = map.current.getBounds();
+          const visibleBounds = [
+            bounds.getWest(),
+            bounds.getSouth(),
+            bounds.getEast(),
+            bounds.getNorth()
+          ];
+
+          // Get current zoom level for data resolution
+          const zoom = map.current.getZoom();
+          
+          // Fetch data with bounds and zoom
+          const data = await fetchFunction({
+            bounds: visibleBounds,
+            zoom,
+            filters: filters // Pass current filters
+          });
+
+          // Update source data
           source.setData(data);
+
+          // If this is a heatmap or choropleth layer, update the corresponding source
+          if (layerId === 'ev-stations' && activeLayers.evStationsHeatmap) {
+            const heatSource = map.current.getSource('ev-stations-heat');
+            if (heatSource) {
+              heatSource.setData(data);
+            }
+          }
 
           // Restore visibility
           if (options.showLoading) {
@@ -773,41 +1010,105 @@ const MapboxMap = () => {
           }
         } catch (error) {
           console.error(`Error loading data for ${layerId}:`, error);
-          // Show error state or fallback
+          showError(`Failed to load ${layerId} data`);
         }
       };
 
-      // Load all layer data in parallel
+      // Load demographic data for choropleth
+      const loadDemographicData = async () => {
+        if (!activeLayers.demographicsChoropleth) return;
+
+        try {
+          const bounds = map.current.getBounds();
+          const data = await fetchDemographicData({
+            bounds: [
+              bounds.getWest(),
+              bounds.getSouth(),
+              bounds.getEast(),
+              bounds.getNorth()
+            ],
+            filters: filters.demographics
+          });
+
+          const source = map.current.getSource('demographics');
+          if (source) {
+            source.setData(data);
+          }
+        } catch (error) {
+          console.error('Error loading demographic data:', error);
+          showError('Failed to load demographic data');
+        }
+      };
+
+      // Load all active layer data in parallel
       await Promise.all([
         loadLayerData('utility-boundaries', fetchUtilityBoundaries, { showLoading: true }),
         loadLayerData('solar-permits', fetchSolarInstallations, { showLoading: true }),
         loadLayerData('ev-stations', fetchEVStations, { showLoading: true }),
         loadLayerData('move-ins', fetchMoveIns),
         loadLayerData('neighborhoods', fetchNeighborhoods),
-        loadLayerData('city-boundaries', fetchCityBoundaries)
+        loadLayerData('city-boundaries', fetchCityBoundaries),
+        loadDemographicData()
       ]);
 
       // Update filters after data is loaded
       updateLayerFilters();
+
+      // Remove loading indicator
+      const indicator = map.current.getContainer().querySelector('.map-loading-indicator');
+      if (indicator) {
+        indicator.remove();
+      }
     } catch (error) {
       console.error('Error loading map data:', error);
-      // Show error state to user
+      showError('Failed to load map data');
     }
   };
 
-  // Debounce the loadMapData function to prevent too many API calls
-  const debouncedLoadMapData = useCallback(
-    debounce(() => {
-      loadMapData();
-    }, 300),
-    [mapBounds, activeLayers, filters]
-  );
+  // Add error display function
+  const showError = (message) => {
+    const errorContainer = document.createElement('div');
+    errorContainer.className = 'map-error-message';
+    errorContainer.textContent = message;
+    map.current.getContainer().appendChild(errorContainer);
+    
+    // Remove error after 3 seconds
+    setTimeout(() => {
+      errorContainer.remove();
+    }, 3000);
+  };
 
-  // Update data when bounds, layers, or filters change
+  // Update the map event listeners in the useEffect hook
   useEffect(() => {
-    debouncedLoadMapData();
-    return () => debouncedLoadMapData.cancel();
-  }, [mapBounds, activeLayers, filters]);
+    if (!map.current || !mapLoaded) return;
+
+    // Debounced version of loadMapData
+    const debouncedLoadData = debounce(() => {
+      const bounds = map.current.getBounds();
+      setMapBounds([
+        bounds.getWest(),
+        bounds.getSouth(),
+        bounds.getEast(),
+        bounds.getNorth()
+      ]);
+      loadMapData();
+    }, 300);
+
+    // Add event listeners for map movement
+    map.current.on('moveend', debouncedLoadData);
+    map.current.on('zoomend', debouncedLoadData);
+    
+    // Load initial data
+    debouncedLoadData();
+
+    // Cleanup
+    return () => {
+      if (map.current) {
+        map.current.off('moveend', debouncedLoadData);
+        map.current.off('zoomend', debouncedLoadData);
+      }
+    };
+  }, [mapLoaded, activeLayers, filters]);
 
   // Enhanced layer filter function
   const updateLayerFilters = () => {
@@ -816,113 +1117,183 @@ const MapboxMap = () => {
     const layers = {
       'solar-permits-layer': createSolarPermitsFilter(),
       'ev-stations-layer': createEVStationsFilter(),
+      'demographics-layer': createDemographicsFilter(),
       'utility-boundaries-layer': createUtilityBoundariesFilter()
     };
 
     Object.entries(layers).forEach(([layerId, filter]) => {
-      if (map.current.getLayer(layerId) && filter) {
+      if (map.current.getLayer(layerId)) {
         map.current.setFilter(layerId, filter);
       }
     });
   };
 
   const createSolarPermitsFilter = () => {
-    const solarFilters = ['all'];
+    const { solarPermits } = filters;
+    const filterArray = ['all'];
     
     // Date range filter
-    if (filters.dateRange[0] && filters.dateRange[1]) {
-      solarFilters.push([
+    if (solarPermits.dateRange[0] && solarPermits.dateRange[1]) {
+      filterArray.push([
         'all',
-        ['>=', ['get', 'applicationDate'], filters.dateRange[0]],
-        ['<=', ['get', 'applicationDate'], filters.dateRange[1]]
+        ['>=', ['get', 'applicationDate'], solarPermits.dateRange[0]],
+        ['<=', ['get', 'applicationDate'], solarPermits.dateRange[1]]
       ]);
     }
 
     // System capacity filter
-    if (filters.capacityRange[0] !== 0 || filters.capacityRange[1] !== 50) {
-      solarFilters.push([
+    if (solarPermits.capacityRange[0] !== 0 || solarPermits.capacityRange[1] !== 50) {
+      filterArray.push([
         'all',
-        ['>=', ['get', 'systemSize'], filters.capacityRange[0]],
-        ['<=', ['get', 'systemSize'], filters.capacityRange[1]]
+        ['>=', ['get', 'systemSize'], solarPermits.capacityRange[0]],
+        ['<=', ['get', 'systemSize'], solarPermits.capacityRange[1]]
       ]);
     }
 
-    // Permit features filters
-    if (filters.expiredPermits) {
-      solarFilters.push(['==', ['get', 'status'], 'expired']);
+    // Status filter
+    if (solarPermits.status !== 'all') {
+      filterArray.push(['==', ['get', 'status'], solarPermits.status]);
     }
-    if (filters.recentPermits) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const sixtyDaysAgo = new Date();
-      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-      
-      solarFilters.push([
-        'all',
-        ['>=', ['get', 'applicationDate'], sixtyDaysAgo.toISOString()],
-        ['<=', ['get', 'applicationDate'], thirtyDaysAgo.toISOString()]
-      ]);
-    }
-    if (filters.hasBattery) {
-      solarFilters.push(['==', ['get', 'hasBattery'], true]);
+
+    // Battery filter
+    if (solarPermits.hasBattery) {
+      filterArray.push(['==', ['get', 'hasBattery'], true]);
     }
 
     // Installer filters
-    if (filters.installers) {
-      const installerFilters = [];
-      if (filters.installers.allBankrupt) {
-        installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
+    const installerFilters = [];
+    Object.entries(solarPermits.installers).forEach(([key, value]) => {
+      if (value) {
+        switch (key) {
+          case 'allBankrupt':
+            installerFilters.push(['==', ['get', 'installerStatus'], 'bankrupt']);
+            break;
+          case 'expiredBankrupt':
+            installerFilters.push([
+              'all',
+              ['==', ['get', 'installerStatus'], 'bankrupt'],
+              ['==', ['get', 'status'], 'expired']
+            ]);
+            break;
+          default:
+            installerFilters.push(['==', ['get', 'installer'], key]);
+        }
       }
-      if (filters.installers.expiredBankrupt) {
-        installerFilters.push([
-          'all',
-          ['==', ['get', 'installerStatus'], 'bankrupt'],
-          ['==', ['get', 'status'], 'expired']
-        ]);
-      }
-      if (filters.installers.lumio) {
-        installerFilters.push(['==', ['get', 'installer'], 'Lumio']);
-      }
-      if (filters.installers.titanSolar) {
-        installerFilters.push(['==', ['get', 'installer'], 'Titan Solar Power']);
-      }
-      if (filters.installers.sunpower) {
-        installerFilters.push(['==', ['get', 'installer'], 'Sunpower']);
-      }
-      
-      if (installerFilters.length > 0) {
-        solarFilters.push(['any', ...installerFilters]);
-      }
+    });
+    
+    if (installerFilters.length > 0) {
+      filterArray.push(['any', ...installerFilters]);
     }
 
-    return solarFilters;
+    return filterArray;
   };
 
   const createEVStationsFilter = () => {
-    return ['all',
-      ['>=', ['get', 'numChargers'], 2],
-      ['==', ['get', 'status'], 'active']
-    ];
+    const { evStations } = filters;
+    const filterArray = ['all'];
+
+    // Minimum chargers filter
+    filterArray.push(['>=', ['get', 'numChargers'], evStations.minChargers]);
+
+    // Status filter
+    if (evStations.status !== 'all') {
+      filterArray.push(['==', ['get', 'status'], evStations.status]);
+    }
+
+    // Connector types filter
+    if (evStations.connectorTypes.length > 0) {
+      filterArray.push([
+        'any',
+        ...evStations.connectorTypes.map(type => 
+          ['in', type, ['get', 'connectorTypes']]
+        )
+      ]);
+    }
+
+    // Network filter
+    if (evStations.network !== 'all') {
+      filterArray.push(['==', ['get', 'network'], evStations.network]);
+    }
+
+    return filterArray;
+  };
+
+  const createDemographicsFilter = () => {
+    const { demographics } = filters;
+    const filterArray = ['all'];
+
+    // Income filter
+    if (demographics.income.min > 0 || demographics.income.max < 200000) {
+      filterArray.push([
+        'all',
+        ['>=', ['get', 'medianIncome'], demographics.income.min],
+        ['<=', ['get', 'medianIncome'], demographics.income.max]
+      ]);
+    }
+
+    // Age filter
+    if (demographics.age.min > 0 || demographics.age.max < 100) {
+      filterArray.push([
+        'all',
+        ['>=', ['get', 'medianAge'], demographics.age.min],
+        ['<=', ['get', 'medianAge'], demographics.age.max]
+      ]);
+    }
+
+    // Homeownership filter
+    if (demographics.homeownership !== 'all') {
+      filterArray.push(['==', ['get', 'homeownership'], demographics.homeownership]);
+    }
+
+    // Education filter
+    if (demographics.education !== 'all') {
+      filterArray.push(['==', ['get', 'education'], demographics.education]);
+    }
+
+    return filterArray;
   };
 
   const createUtilityBoundariesFilter = () => {
-    return ['all']; // Add utility-specific filters here
+    const { utilities } = filters;
+    const filterArray = ['all'];
+
+    // Provider filter
+    if (utilities.provider !== 'all') {
+      filterArray.push(['==', ['get', 'provider'], utilities.provider]);
+    }
+
+    // Rate type filter
+    if (utilities.rateType !== 'all') {
+      filterArray.push(['==', ['get', 'rateType'], utilities.rateType]);
+    }
+
+    // Solar program filter
+    if (utilities.hasSolarProgram !== null) {
+      filterArray.push(['==', ['get', 'hasSolarProgram'], utilities.hasSolarProgram]);
+    }
+
+    return filterArray;
   };
 
   // Toggle layer visibility
   const toggleLayer = (layerId) => {
+    if (!map.current) return;
+
     setActiveLayers(prev => {
       const newLayers = { ...prev, [layerId]: !prev[layerId] };
       
-      // Update layer visibility
-      if (map.current) {
-        const mapLayerId = `${layerId}-layer`;
-        if (map.current.getLayer(mapLayerId)) {
-          map.current.setLayoutProperty(
-            mapLayerId,
-            'visibility',
-            newLayers[layerId] ? 'visible' : 'none'
-          );
+      // Update layer visibility in Mapbox
+      const mapLayerId = `${layerId}-layer`;
+      if (map.current.getLayer(mapLayerId)) {
+        map.current.setLayoutProperty(
+          mapLayerId,
+          'visibility',
+          newLayers[layerId] ? 'visible' : 'none'
+        );
+
+        // If this is a data layer, trigger a data refresh
+        if (['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins'].includes(layerId)) {
+          loadMapData();
         }
       }
 
@@ -932,14 +1303,18 @@ const MapboxMap = () => {
 
   // Toggle panel visibility
   const togglePanel = (panelName) => {
-    console.log('Toggling panel:', panelName, 'Current active panel:', activePanel);
-    if (activePanel === panelName) {
-      console.log('Closing panel:', panelName);
-      setActivePanel(null);
-    } else {
-      console.log('Opening panel:', panelName);
-      setActivePanel(panelName);
-    }
+    console.log('Toggling panel:', panelName);
+    setActivePanel(prevPanel => {
+      const newPanel = prevPanel === panelName ? null : panelName;
+      console.log('New active panel:', newPanel);
+      return newPanel;
+    });
+    
+    // Update visible panels state
+    setVisiblePanels(prev => ({
+      ...prev,
+      [panelName]: !prev[panelName]
+    }));
   };
 
   useEffect(() => {
@@ -955,79 +1330,135 @@ const MapboxMap = () => {
     }));
   };
 
+  // Add effect to handle layer visibility changes
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
+      const mapLayerId = `${layerId}-layer`;
+      if (map.current.getLayer(mapLayerId)) {
+        map.current.setLayoutProperty(
+          mapLayerId,
+          'visibility',
+          isVisible ? 'visible' : 'none'
+        );
+
+        // If layer is being shown, ensure its data is loaded
+        if (isVisible && ['solar-permits', 'ev-stations', 'utility-boundaries', 'move-ins'].includes(layerId)) {
+          loadMapData();
+        }
+      }
+    });
+  }, [activeLayers, mapLoaded]);
+
+  const renderLegend = () => {
+    if (!activeLayers.evStationsHeatmap && !activeLayers.demographicsChoropleth) {
+      return null;
+    }
+
+    return (
+      <div className="layer-legend">
+        {activeLayers.evStationsHeatmap && (
+          <div className="legend-section">
+            <h4>EV Station Density</h4>
+            <div className="legend-gradient ev-stations">
+              <div className="gradient-bar"></div>
+              <div className="gradient-labels">
+                <span>Low</span>
+                <span>High</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {activeLayers.demographicsChoropleth && (
+          <div className="legend-section">
+            <h4>Median Income</h4>
+            <div className="legend-gradient demographics">
+              <div className="gradient-bar"></div>
+              <div className="gradient-labels">
+                <span>$0</span>
+                <span>$200k+</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="map-container">
       <div ref={mapContainer} className="map" />
-      
-      {mapLoaded && (
-        <>
-          <MapControls onTogglePanel={togglePanel} activePanel={activePanel} />
-          <div className="panel-container">
-            <div className={`panel ${activePanel === 'layers' ? 'visible' : ''}`}>
-              <div className="panel-header">
-                <h3>Layers</h3>
-                <button className="panel-close" onClick={() => togglePanel('layers')}>×</button>
-              </div>
-              <div className="panel-content">
-                <LayersPanel
-                  activeLayers={activeLayers}
-                  onLayerToggle={toggleLayer}
-                />
-              </div>
-            </div>
-            
-            <div className={`panel ${activePanel === 'filters' ? 'visible' : ''}`}>
-              <div className="panel-header">
-                <h3>Filters</h3>
-                <button className="panel-close" onClick={() => togglePanel('filters')}>×</button>
-              </div>
-              <div className="panel-content">
-                <FiltersPanel
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                />
-              </div>
-            </div>
-            
-            <div className={`panel ${activePanel === 'leads' ? 'visible' : ''}`}>
-              <div className="panel-header">
-                <h3>Leads</h3>
-                <button className="panel-close" onClick={() => togglePanel('leads')}>×</button>
-              </div>
-              <div className="panel-content">
-                <LeadsPanel />
-              </div>
-            </div>
-            
-            <div className={`panel ${activePanel === 'solar-permits' ? 'visible' : ''}`}>
-              <div className="panel-header">
-                <h3>Solar Permits</h3>
-                <button className="panel-close" onClick={() => togglePanel('solar-permits')}>×</button>
-              </div>
-              <div className="panel-content">
-                <SolarPermitsPanel
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                />
-              </div>
-            </div>
-            
-            {selectedProperty && (
-              <div className={`panel ${activePanel === 'propertyDetails' ? 'visible' : ''}`}>
-                <div className="panel-header">
-                  <h3>Property Details</h3>
-                  <button className="panel-close" onClick={() => togglePanel('propertyDetails')}>×</button>
-                </div>
-                <div className="panel-content">
-                  <PropertyDetailsPanel
-                    property={selectedProperty}
-                  />
-                </div>
-              </div>
-            )}
+      <MapControls 
+        onTogglePanel={togglePanel} 
+        activePanel={activePanel}
+      />
+      {renderLegend()}
+      <div className="panel-container">
+        <div className={`panel ${visiblePanels.layers ? 'visible' : ''}`}>
+          <div className="panel-header">
+            <h3>Layers</h3>
+            <button className="panel-close" onClick={() => togglePanel('layers')}>×</button>
           </div>
-        </>
-      )}
+          <div className="panel-content">
+            <LayersPanel
+              activeLayers={activeLayers}
+              onLayerToggle={toggleLayer}
+            />
+          </div>
+        </div>
+        
+        <div className={`panel ${visiblePanels.filters ? 'visible' : ''}`}>
+          <div className="panel-header">
+            <h3>Filters</h3>
+            <button className="panel-close" onClick={() => togglePanel('filters')}>×</button>
+          </div>
+          <div className="panel-content">
+            <FiltersPanel
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+          </div>
+        </div>
+        
+        <div className={`panel ${visiblePanels.leads ? 'visible' : ''}`}>
+          <div className="panel-header">
+            <h3>Leads</h3>
+            <button className="panel-close" onClick={() => togglePanel('leads')}>×</button>
+          </div>
+          <div className="panel-content">
+            <LeadsPanel />
+          </div>
+        </div>
+        
+        <div className={`panel ${visiblePanels['solar-permits'] ? 'visible' : ''}`}>
+          <div className="panel-header">
+            <h3>Solar Permits</h3>
+            <button className="panel-close" onClick={() => togglePanel('solar-permits')}>×</button>
+          </div>
+          <div className="panel-content">
+            <SolarPermitsPanel
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+          </div>
+        </div>
+        
+        {selectedProperty && (
+          <div className={`panel ${visiblePanels.propertyDetails ? 'visible' : ''}`}>
+            <div className="panel-header">
+              <h3>Property Details</h3>
+              <button className="panel-close" onClick={() => togglePanel('propertyDetails')}>×</button>
+            </div>
+            <div className="panel-content">
+              <PropertyDetailsPanel
+                property={selectedProperty}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

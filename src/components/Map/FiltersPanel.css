@@ -1,79 +1,55 @@
 .filters-panel {
-  position: absolute;
-  top: 80px;
-  left: 20px;
-  width: 320px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  z-index: 1000;
-}
-
-.panel-header {
+  padding: 16px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #eee;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.panel-header h2 {
-  margin: 0;
-  font-size: 16px;
+.filter-section {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.filter-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
-.close-button {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: #666;
-  cursor: pointer;
-  padding: 0;
+.filter-group {
+  margin-bottom: 16px;
 }
 
-.filter-section {
-  padding: 12px 16px;
-  border-bottom: 1px solid #eee;
+.filter-group:last-child {
+  margin-bottom: 0;
 }
 
-.filter-section:last-child {
-  border-bottom: none;
-}
-
-.filter-section h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #666;
-}
-
-.button-group {
-  display: flex;
-  gap: 8px;
-}
-
-.filter-button {
-  flex: 1;
-  padding: 6px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
-  color: #333;
+.filter-group label {
+  display: block;
   font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
+  color: #666;
+  margin-bottom: 8px;
 }
 
-.filter-button:hover {
-  background: #f5f5f5;
+.filter-group select,
+.filter-group input[type="number"],
+.filter-group input[type="date"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #333;
+  background: white;
 }
 
-.filter-button.active {
-  background: #007bff;
-  color: white;
-  border-color: #007bff;
+.filter-group select:focus,
+.filter-group input[type="number"]:focus,
+.filter-group input[type="date"]:focus {
+  outline: none;
+  border-color: #4264fb;
 }
 
 .range-inputs {
@@ -82,48 +58,117 @@
   gap: 8px;
 }
 
-.input-group {
+.range-inputs input {
   flex: 1;
-  position: relative;
 }
 
-.input-group input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+.range-inputs span {
+  color: #666;
   font-size: 13px;
-  color: #333;
 }
 
-.input-group input:focus {
+.date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-inputs input {
+  flex: 1;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Custom checkbox styling */
+.checkbox-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
   outline: none;
-  border-color: #007bff;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
 }
 
-.input-label {
+.checkbox-label input[type="checkbox"]:checked {
+  background-color: #4264fb;
+  border-color: #4264fb;
+}
+
+.checkbox-label input[type="checkbox"]:checked::after {
+  content: '';
   position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 12px;
-  color: #666;
-  pointer-events: none;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
-.separator {
-  color: #666;
-  font-size: 12px;
-  padding: 0 4px;
+.checkbox-label:hover input[type="checkbox"] {
+  border-color: #4264fb;
 }
 
-/* Hide number input spinners */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
+/* Select styling */
+.filter-group select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+/* Number input styling */
+.filter-group input[type="number"]::-webkit-inner-spin-button,
+.filter-group input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-input[type="number"] {
+.filter-group input[type="number"] {
   -moz-appearance: textfield;
+}
+
+/* Date input styling */
+.filter-group input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  opacity: 0.6;
+}
+
+.filter-group input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .range-inputs,
+  .date-inputs {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .range-inputs span,
+  .date-inputs span {
+    display: none;
+  }
 } 

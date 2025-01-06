@@ -2,38 +2,43 @@
   position: absolute;
   top: 20px;
   left: 20px;
+  z-index: 1002;
   display: flex;
-  flex-direction: row;
   gap: 8px;
-  z-index: 1000;
+  pointer-events: auto;
 }
 
 .controls-left {
   display: flex;
   gap: 8px;
+  background: transparent;
 }
 
 .control-button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: white;
+  padding: 8px 12px;
+  background: white !important;
   border: none;
   border-radius: 4px;
   font-size: 13px;
   color: #333;
   cursor: pointer;
-  box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   white-space: nowrap;
+  transition: all 0.2s ease;
+  pointer-events: auto;
 }
 
 .control-button:hover {
-  background: #f8f8f8;
+  background: #f8f8f8 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.15);
 }
 
 .control-button.active {
-  background: #4264fb;
+  background: #4264fb !important;
   color: white;
 }
 

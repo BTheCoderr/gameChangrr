@@ -1,100 +1,77 @@
 .layer-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  padding: 1rem;
 }
 
 .layer-group {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 12px;
+  margin-bottom: 1.5rem;
 }
 
 .group-title {
-  margin: 0 0 8px 0;
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 600;
+  margin-bottom: 0.5rem;
   color: #333;
 }
 
 .layer-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
+  gap: 0.75rem;
 }
 
 .layer-item {
-  background: white;
-  border-radius: 6px;
-  padding: 6px;
-  transition: background-color 0.2s;
-}
-
-.layer-item:hover {
-  background: #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .layer-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  width: 100%;
-}
-
-.layer-toggle input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
+  gap: 0.5rem;
   cursor: pointer;
 }
 
 .layer-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
+  font-size: 1.25rem;
 }
 
 .layer-label {
-  font-size: 12px;
-  color: #333;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.layer-opacity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 2rem;
+}
+
+.opacity-slider {
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Checkbox styling */
-.layer-toggle input[type="checkbox"] {
-  appearance: none;
+  height: 4px;
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #ddd;
-  border-radius: 4px;
+  background: #ddd;
+  border-radius: 2px;
   outline: none;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #4a90e2;
+  border-radius: 50%;
   cursor: pointer;
-  position: relative;
-  transition: all 0.2s;
+  transition: background 0.2s;
 }
 
-.layer-toggle input[type="checkbox"]:checked {
-  background-color: #4264fb;
-  border-color: #4264fb;
+.opacity-slider::-webkit-slider-thumb:hover {
+  background: #357abd;
 }
 
-.layer-toggle input[type="checkbox"]:checked::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 8px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.layer-toggle input[type="checkbox"]:hover {
-  border-color: #4264fb;
+.opacity-value {
+  font-size: 0.8rem;
+  color: #666;
+  min-width: 3rem;
 } 

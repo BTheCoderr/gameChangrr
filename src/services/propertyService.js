@@ -1,207 +1,211 @@
-import axios from 'axios'
-import { API_CONFIG, getHeaders, handleApiError, CACHE_CONFIG } from '../config/api'
+import { API_CONFIG, handleApiError } from '../config/api';
+import axios from 'axios';
 
-const cache = new Map()
+// Cache duration in milliseconds (24 hours)
+const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
-const isCacheValid = (key) => {
-  const cached = cache.get(key)
-  if (!cached) return false
-  return (Date.now() - cached.timestamp) < CACHE_CONFIG.propertyData.duration
-}
+// Simple in-memory cache
+const cache = new Map();
 
-export const getPropertyData = async (lat, lng) => {
-  try {
-    const cacheKey = `${lat},${lng}`
-    if (isCacheValid(cacheKey)) {
-      return cache.get(cacheKey).data
+const isCacheValid = (cacheEntry) => {
+  return cacheEntry && (Date.now() - cacheEntry.timestamp) < CACHE_DURATION;
+};
+
+// Mock property boundary data
+const mockBoundaryData = {
+  type: 'FeatureCollection',
+  features: Array.from({ length: 20 }, (_, i) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [-72.5 - 0.01 + Math.random() * 0.02, 42 - 0.01 + Math.random() * 0.02],
+        [-72.5 - 0.01 + Math.random() * 0.02, 42 + 0.01 + Math.random() * 0.02],
+        [-72.5 + 0.01 + Math.random() * 0.02, 42 + 0.01 + Math.random() * 0.02],
+        [-72.5 + 0.01 + Math.random() * 0.02, 42 - 0.01 + Math.random() * 0.02],
+        [-72.5 - 0.01 + Math.random() * 0.02, 42 - 0.01 + Math.random() * 0.02]
+      ]]
+    },
+    properties: {
+      id: `PARCEL${i + 1}`,
+      address: `${Math.floor(Math.random() * 999) + 1} Main St`,
+      price: Math.floor(200000 + Math.random() * 300000),
+      yearBuilt: 1950 + Math.floor(Math.random() * 70),
+      propertyType: ['Single Family', 'Multi Family', 'Commercial'][Math.floor(Math.random() * 3)],
+      sqft: Math.floor(1500 + Math.random() * 3500)
     }
+  }))
+};
 
-    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/point`, {
-      params: {
-        lat,
-        lon: lng
-      },
-      headers: getHeaders('regrid')
-    })
-
-    const parcel = response.data.results[0]
-    if (!parcel) return null
-
-    const result = {
-      parcelId: parcel.parcel_id,
-      address: parcel.address,
-      ownerName: parcel.owner_name,
-      landUse: parcel.land_use,
-      zoning: parcel.zoning,
-      lotSize: parcel.lot_size_sqft,
-      yearBuilt: parcel.year_built,
-      lastSale: {
-        date: parcel.last_sale_date,
-        price: parcel.last_sale_price
-      },
-      geometry: parcel.geometry
+// Mock property data
+const mockPropertyData = {
+  type: 'FeatureCollection',
+  features: Array.from({ length: 30 }, (_, i) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [
+        -72.5 + Math.random() * 2, // Longitude between -72.5 and -70.5
+        42 + Math.random() * 1 // Latitude between 42 and 43
+      ]
+    },
+    properties: {
+      id: `PROP${i + 1}`,
+      address: `${Math.floor(Math.random() * 999) + 1} Main St`,
+      city: 'Springfield',
+      state: 'MA',
+      zipCode: '01103',
+      propertyType: ['Single Family', 'Multi Family', 'Commercial'][Math.floor(Math.random() * 3)],
+      yearBuilt: 1950 + Math.floor(Math.random() * 70),
+      squareFootage: Math.floor(1500 + Math.random() * 3500),
+      roofArea: Math.floor(800 + Math.random() * 2000),
+      roofType: ['Flat', 'Gabled', 'Hip'][Math.floor(Math.random() * 3)],
+      roofMaterial: ['Asphalt Shingle', 'Metal', 'Slate'][Math.floor(Math.random() * 3)],
+      roofAge: Math.floor(Math.random() * 20),
+      solarPotential: {
+        score: Math.random(),
+        annualGeneration: Math.floor(6000 + Math.random() * 4000),
+        systemSize: Math.floor(5 + Math.random() * 10),
+        roofArea: Math.floor(800 + Math.random() * 2000)
+      }
     }
+  }))
+};
 
-    cache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    })
-
-    return result
-  } catch (error) {
-    handleApiError(error, 'Regrid Property')
-    return null
+export const fetchPropertyBoundaries = async (boundingBox, filters = {}) => {
+  const cacheKey = `boundaries-${JSON.stringify(boundingBox)}-${JSON.stringify(filters)}`;
+  
+  // Check cache first
+  const cachedData = cache.get(cacheKey);
+  if (isCacheValid(cachedData)) {
+    return cachedData.data;
   }
-}
 
-export const searchProperties = async (bounds, filters = {}) => {
   try {
-    const cacheKey = JSON.stringify({ bounds, filters })
-    if (isCacheValid(cacheKey)) {
-      return cache.get(cacheKey).data
-    }
-
-    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/search`, {
+    const response = await axios.get(`${API_CONFIG.baseUrl}/properties/boundaries`, {
       params: {
-        bbox: `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
-        ...filters
-      },
-      headers: getHeaders('regrid')
-    })
+        north: boundingBox.north || boundingBox._ne?.lat,
+        south: boundingBox.south || boundingBox._sw?.lat,
+        east: boundingBox.east || boundingBox._ne?.lng,
+        west: boundingBox.west || boundingBox._sw?.lng,
+        minPrice: filters.priceRange?.[0],
+        maxPrice: filters.priceRange?.[1],
+        minYear: filters.yearBuilt?.[0],
+        maxYear: filters.yearBuilt?.[1],
+        propertyType: filters.propertyType !== 'all' ? filters.propertyType : undefined
+      }
+    });
 
-    const result = {
-      type: 'FeatureCollection',
-      features: response.data.results.map(parcel => ({
-        type: 'Feature',
-        geometry: parcel.geometry,
-        properties: {
-          parcelId: parcel.parcel_id,
-          address: parcel.address,
-          ownerName: parcel.owner_name,
-          landUse: parcel.land_use,
-          zoning: parcel.zoning,
-          lotSize: parcel.lot_size_sqft,
-          yearBuilt: parcel.year_built,
-          lastSaleDate: parcel.last_sale_date,
-          lastSalePrice: parcel.last_sale_price
-        }
-      }))
+    if (response.data) {
+      // Update cache
+      cache.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+      return response.data;
     }
-
-    cache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    })
-
-    return result
   } catch (error) {
-    handleApiError(error, 'Regrid Search')
-    return null
+    console.warn('Failed to fetch property boundaries from API, falling back to mock data:', error);
+    handleApiError(error, 'Property Boundaries');
   }
-}
 
-/**
- * Fetches property boundaries within the specified bounding box and filters
- * @param {Object} boundingBox - The geographic bounds to fetch properties within
- * @param {Object} filters - The filters to apply to the property search
- * @returns {Promise<GeoJSON>} A GeoJSON object containing property boundaries
- */
-export const fetchPropertyBoundaries = async (boundingBox, filters) => {
+  // Fall back to mock data
+  return {
+    ...mockBoundaryData,
+    features: mockBoundaryData.features.filter(feature => {
+      const [lng, lat] = feature.geometry.coordinates[0][0];
+      return lng >= (boundingBox.west || boundingBox._sw?.lng) && 
+             lng <= (boundingBox.east || boundingBox._ne?.lng) && 
+             lat >= (boundingBox.south || boundingBox._sw?.lat) && 
+             lat <= (boundingBox.north || boundingBox._ne?.lat);
+    })
+  };
+};
+
+export const fetchProperties = async (bounds) => {
+  const cacheKey = `properties-${bounds.north}-${bounds.south}-${bounds.east}-${bounds.west}`;
+  
+  // Check cache first
+  const cachedData = cache.get(cacheKey);
+  if (isCacheValid(cachedData)) {
+    return cachedData.data;
+  }
+
   try {
-    const cacheKey = JSON.stringify({ boundingBox, filters })
-    if (isCacheValid(cacheKey)) {
-      return cache.get(cacheKey).data
-    }
-
-    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/parcels/search`, {
+    const response = await axios.get(`${API_CONFIG.baseUrl}/properties`, {
       params: {
-        bbox: `${boundingBox.west},${boundingBox.south},${boundingBox.east},${boundingBox.north}`,
-        minPrice: filters.priceRange[0],
-        maxPrice: filters.priceRange[1],
-        minYear: filters.yearBuilt[0],
-        maxYear: filters.yearBuilt[1],
-        propertyType: filters.propertyType !== 'all' ? filters.propertyType : undefined,
-        startDate: filters.dateRange[0],
-        endDate: filters.dateRange[1]
-      },
-      headers: getHeaders('regrid')
-    })
+        north: bounds.north,
+        south: bounds.south,
+        east: bounds.east,
+        west: bounds.west
+      }
+    });
 
-    const result = {
-      type: 'FeatureCollection',
-      features: response.data.results.map(parcel => ({
-        type: 'Feature',
-        geometry: parcel.geometry,
-        properties: {
-          parcelId: parcel.parcel_id,
-          address: parcel.address,
-          price: parcel.last_sale_price,
-          yearBuilt: parcel.year_built,
-          propertyType: parcel.land_use,
-          sqft: parcel.lot_size_sqft
-        }
-      }))
+    if (response.data) {
+      // Update cache
+      cache.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+      return response.data;
     }
-
-    cache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    })
-
-    return result
   } catch (error) {
-    console.error('Error fetching property boundaries:', error)
-    return {
-      type: 'FeatureCollection',
-      features: []
-    }
+    console.warn('Failed to fetch property data from API, falling back to mock data:', error);
+    handleApiError(error, 'Properties');
+  }
+
+  // Fall back to mock data
+  return {
+    ...mockPropertyData,
+    features: mockPropertyData.features.filter(feature => {
+      const [lng, lat] = feature.geometry.coordinates;
+      return lng >= bounds.west && lng <= bounds.east && 
+             lat >= bounds.south && lat <= bounds.north;
+    })
+  };
+};
+
+export const getPropertyDetails = async (propertyId) => {
+  try {
+    const response = await axios.get(`${API_CONFIG.baseUrl}/properties/${propertyId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching property details:', error);
+    handleApiError(error, 'Property Details');
+    return null;
   }
 };
 
-/**
- * Fetches city boundaries within the specified bounding box
- * @param {Object} boundingBox - The geographic bounds to fetch boundaries within
- * @returns {Promise<GeoJSON>} A GeoJSON object containing city boundaries
- */
-export const fetchCityBoundaries = async (boundingBox) => {
+export const getPropertyStats = async (bounds) => {
   try {
-    const cacheKey = JSON.stringify({ type: 'city-boundaries', boundingBox });
-    if (isCacheValid(cacheKey)) {
-      return cache.get(cacheKey).data;
-    }
-
-    const response = await axios.get(`${API_CONFIG.regrid.baseUrl}/boundaries/cities`, {
-      params: {
-        bbox: `${boundingBox.west},${boundingBox.south},${boundingBox.east},${boundingBox.north}`
-      },
-      headers: getHeaders('regrid')
+    const response = await axios.get(`${API_CONFIG.baseUrl}/properties/stats`, {
+      params: bounds
     });
-
-    const result = {
-      type: 'FeatureCollection',
-      features: response.data.results.map(city => ({
-        type: 'Feature',
-        geometry: city.geometry,
-        properties: {
-          cityId: city.city_id,
-          name: city.name,
-          state: city.state,
-          population: city.population
-        }
-      }))
-    };
-
-    cache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    });
-
-    return result;
+    return response.data;
   } catch (error) {
-    console.error('Error fetching city boundaries:', error);
+    console.error('Error fetching property statistics:', error);
+    handleApiError(error, 'Property Statistics');
+    
+    // Return mock stats
     return {
-      type: 'FeatureCollection',
-      features: []
+      totalProperties: 350,
+      averageSquareFootage: 2250,
+      averageYearBuilt: 1985,
+      propertyTypes: {
+        singleFamily: 0.65,
+        multiFamily: 0.25,
+        commercial: 0.10
+      },
+      roofTypes: {
+        flat: 0.20,
+        gabled: 0.60,
+        hip: 0.20
+      },
+      solarPotential: {
+        high: 0.35,
+        medium: 0.45,
+        low: 0.20
+      }
     };
   }
 }; 

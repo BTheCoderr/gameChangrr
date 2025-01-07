@@ -1,0 +1,88 @@
+.layer-toggle {
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.layer-toggle:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.layer-toggle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.layer-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.87);
+}
+
+.layer-icon {
+  display: flex;
+  align-items: center;
+  color: rgba(0, 0, 0, 0.54);
+}
+
+.layer-icon svg {
+  font-size: 20px;
+}
+
+.info-button {
+  color: rgba(0, 0, 0, 0.54);
+  padding: 4px;
+}
+
+.info-button:hover {
+  color: rgba(0, 0, 0, 0.87);
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.opacity-slider {
+  padding: 0 12px 8px;
+  margin-top: 4px;
+}
+
+.opacity-slider .MuiTypography-caption {
+  color: rgba(0, 0, 0, 0.6);
+  margin-bottom: 4px;
+}
+
+.opacity-slider .MuiSlider-root {
+  color: #1976d2;
+  padding: 10px 0;
+}
+
+.opacity-slider .MuiSlider-thumb {
+  width: 12px;
+  height: 12px;
+}
+
+.opacity-slider .MuiSlider-track {
+  height: 2px;
+}
+
+.opacity-slider .MuiSlider-rail {
+  height: 2px;
+  opacity: 0.38;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .layer-label {
+    font-size: 13px;
+  }
+
+  .layer-icon svg {
+    font-size: 18px;
+  }
+
+  .opacity-slider {
+    padding: 0 8px 6px;
+  }
+} 

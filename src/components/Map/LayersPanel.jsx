@@ -60,6 +60,21 @@ const LayersPanel = ({ visible, activeLayers, onLayerToggle, onClose }) => {
     }
   ];
 
+  // State for layer opacities
+  const [layerOpacities, setLayerOpacities] = React.useState({});
+
+  // Handle opacity change
+  const handleOpacityChange = (layerKey, value) => {
+    setLayerOpacities(prev => ({
+      ...prev,
+      [layerKey]: value
+    }));
+    // Notify parent component about opacity change
+    if (onLayerToggle) {
+      onLayerToggle(layerKey, { opacity: value });
+    }
+  };
+
   return (
     <div className="layer-groups">
       {layerGroups.map(group => (
@@ -77,6 +92,20 @@ const LayersPanel = ({ visible, activeLayers, onLayerToggle, onClose }) => {
                   <span className="layer-icon">{layer.icon}</span>
                   <span className="layer-label">{layer.label}</span>
                 </label>
+                {activeLayers[layer.key] && (
+                  <div className="layer-opacity">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={layerOpacities[layer.key] || 1}
+                      onChange={(e) => handleOpacityChange(layer.key, parseFloat(e.target.value))}
+                      className="opacity-slider"
+                    />
+                    <span className="opacity-value">{Math.round((layerOpacities[layer.key] || 1) * 100)}%</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>

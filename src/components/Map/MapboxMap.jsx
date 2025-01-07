@@ -604,6 +604,97 @@ const MapboxMap = () => {
 
         console.log('Layers initialized successfully');
       });
+
+      // Solar data with clustering
+      map.addSource('solar-data', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50
+      });
+
+      // Add cluster layers
+      map.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'solar-data',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#51bbd6',
+            100,
+            '#f1f075',
+            750,
+            '#f28cb1'
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            20,
+            100,
+            30,
+            750,
+            40
+          ]
+        }
+      });
+
+      map.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'solar-data',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-size': 12
+        }
+      });
+
+      map.addLayer({
+        id: 'unclustered-point',
+        type: 'circle',
+        source: 'solar-data',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#11b4da',
+          'circle-radius': 8,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#fff'
+        }
+      });
+
+      // Add click handlers for clusters
+      map.on('click', 'clusters', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+        const clusterId = features[0].properties.cluster_id;
+        map.getSource('solar-data').getClusterExpansionZoom(
+          clusterId,
+          (err, zoom) => {
+            if (err) return;
+
+            map.easeTo({
+              center: features[0].geometry.coordinates,
+              zoom: zoom
+            });
+          }
+        );
+      });
+
+      // Change cursor on hover
+      map.on('mouseenter', 'clusters', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'clusters', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
     } catch (error) {
       console.error('Error initializing layers:', error);
     }
@@ -1017,23 +1108,17 @@ const MapboxMap = () => {
   // Update the filters state setter
   const handleFiltersChange = (newFilters) => {
     setFilters(newFilters);
-    // Queue updates for affected layers
-    Object.keys(newFilters).forEach(filterKey => {
-      switch (filterKey) {
-        case 'solarPermits':
-          queueFilterUpdate('solar-permits');
-          break;
-        case 'evStations':
-          queueFilterUpdate('ev-stations');
-          break;
-        case 'demographics':
-          queueFilterUpdate('demographics');
-          break;
-        case 'utilities':
-          queueFilterUpdate('utility-boundaries');
-          break;
-      }
-    });
+    
+    // Apply filters to respective layers
+    if (newFilters.solarPermits) {
+      applyFilter('solar-permits', newFilters.solarPermits);
+    }
+    if (newFilters.moveIns) {
+      applyFilter('move-ins', newFilters.moveIns);
+    }
+    if (newFilters.evStations) {
+      applyFilter('ev-stations', newFilters.evStations);
+    }
   };
 
   const createSolarPermitsFilter = () => {
@@ -1378,6 +1463,49 @@ const MapboxMap = () => {
       }
     });
   }, [mapLoaded]);
+
+  // Enhanced filter application function
+  const applyFilter = (layerId, filterCriteria) => {
+    if (!map.current) return;
+    
+    const createFilterExpression = (criteria) => {
+      switch(layerId) {
+        case 'solar-permits':
+          return [
+            'all',
+            ['==', 'status', criteria.status || 'all'],
+            criteria.hasBattery ? ['==', 'hasBattery', true] : true,
+            criteria.dateRange[0] ? ['>=', ['get', 'applicationDate'], criteria.dateRange[0]] : true,
+            criteria.dateRange[1] ? ['<=', ['get', 'applicationDate'], criteria.dateRange[1]] : true,
+            ['>=', ['get', 'systemSize'], criteria.capacityRange[0]],
+            ['<=', ['get', 'systemSize'], criteria.capacityRange[1]]
+          ];
+        
+        case 'move-ins':
+          return [
+            'all',
+            ['==', 'propertyType', criteria.propertyType || 'all'],
+            criteria.dateRange[0] ? ['>=', ['get', 'moveInDate'], criteria.dateRange[0]] : true,
+            criteria.dateRange[1] ? ['<=', ['get', 'moveInDate'], criteria.dateRange[1]] : true
+          ];
+        
+        case 'ev-stations':
+          return [
+            'all',
+            ['==', 'status', criteria.status || 'active'],
+            ['>=', ['get', 'numChargers'], criteria.minChargers || 0],
+            criteria.connectorTypes.length ? ['in', ['get', 'connectorType'], ['literal', criteria.connectorTypes]] : true,
+            criteria.network === 'all' ? true : ['==', ['get', 'network'], criteria.network]
+          ];
+        
+        default:
+          return true;
+      }
+    };
+
+    const filter = createFilterExpression(filterCriteria);
+    map.current.setFilter(layerId, filter);
+  };
 
   return (
     <div className="map-container">

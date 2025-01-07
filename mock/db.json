@@ -1,0 +1,71 @@
+{
+  "utility-boundaries": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [[
+            [-72.589760, 42.106091],
+            [-72.589846, 42.103991],
+            [-72.588859, 42.101891],
+            [-72.586713, 42.101634],
+            [-72.584181, 42.101505],
+            [-72.581778, 42.101505],
+            [-72.580190, 42.102305],
+            [-72.579632, 42.104091],
+            [-72.580061, 42.105677],
+            [-72.581692, 42.106648],
+            [-72.584267, 42.107134],
+            [-72.586885, 42.107005],
+            [-72.589760, 42.106091]
+          ]]
+        },
+        "properties": {
+          "utilityName": "Eversource Energy",
+          "serviceArea": "Western Massachusetts",
+          "rateType": "Residential",
+          "solarRate": "Net Metering"
+        }
+      }
+    ]
+  },
+  "solar-installations": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [-72.585, 42.104]
+        },
+        "properties": {
+          "permitId": "SP001",
+          "address": "123 Main St",
+          "status": "approved",
+          "systemSize": 8.5,
+          "installer": "SunPower",
+          "applicationDate": "2023-12-01",
+          "hasBattery": true
+        }
+      },
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [-72.582, 42.103]
+        },
+        "properties": {
+          "permitId": "SP002",
+          "address": "456 Oak Ave",
+          "status": "pending",
+          "systemSize": 6.2,
+          "installer": "Lumio",
+          "applicationDate": "2024-01-15",
+          "hasBattery": false
+        }
+      }
+    ]
+  }
+} 

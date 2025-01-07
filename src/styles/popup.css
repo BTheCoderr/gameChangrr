@@ -1,0 +1,158 @@
+.solar-permit-popup .mapboxgl-popup-content {
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.solar-permit-popup .mapboxgl-popup-content::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.05));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.solar-permit-popup .mapboxgl-popup-content.is-scrollable::after {
+  opacity: 1;
+}
+
+.solar-permit-popup .custom-popup {
+  padding: 15px;
+  padding-bottom: 25px;
+}
+
+.solar-permit-popup h4 {
+  margin: 0 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #f0f0f0;
+  color: #2c3e50;
+  font-size: 1.2em;
+}
+
+.solar-permit-popup .popup-section {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.solar-permit-popup .popup-section:last-child {
+  border-bottom: none;
+  margin-bottom: 5px;
+}
+
+.solar-permit-popup h5 {
+  margin: 0 0 8px 0;
+  color: #34495e;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.solar-permit-popup .popup-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+  font-size: 0.9em;
+}
+
+.solar-permit-popup .popup-detail .label {
+  color: #7f8c8d;
+  margin-right: 10px;
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.solar-permit-popup .popup-detail .value {
+  color: #2c3e50;
+  text-align: right;
+  font-weight: 500;
+}
+
+.solar-permit-popup .popup-badge {
+  margin-top: 10px;
+  padding: 8px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.solar-permit-popup .battery-included {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.solar-permit-popup .battery-included::before {
+  content: '🔋';
+  font-size: 1.1em;
+}
+
+/* Scrollbar Styling */
+.solar-permit-popup .mapboxgl-popup-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.solar-permit-popup .mapboxgl-popup-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.solar-permit-popup .mapboxgl-popup-content::-webkit-scrollbar-thumb {
+  background: #bdc3c7;
+  border-radius: 4px;
+  border: 2px solid #f1f1f1;
+}
+
+.solar-permit-popup .mapboxgl-popup-content::-webkit-scrollbar-thumb:hover {
+  background: #95a5a6;
+}
+
+/* Scroll indicator */
+.solar-permit-popup .scroll-indicator {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #666;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.solar-permit-popup .scroll-indicator.visible {
+  opacity: 1;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+  .solar-permit-popup .mapboxgl-popup-content {
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .solar-permit-popup .popup-detail {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .solar-permit-popup .popup-detail .value {
+    text-align: left;
+    margin-top: 2px;
+  }
+} 

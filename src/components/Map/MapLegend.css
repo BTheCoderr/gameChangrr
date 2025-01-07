@@ -1,0 +1,105 @@
+.map-legend {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  background: white;
+  border-radius: 8px;
+  padding: 15px;
+  min-width: 200px;
+  max-width: 300px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+  z-index: 1;
+}
+
+.map-legend h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.legend-section {
+  margin-bottom: 15px;
+}
+
+.legend-section:last-child {
+  margin-bottom: 0;
+}
+
+.legend-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.legend-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.2;
+}
+
+/* Hover effects */
+.legend-item:hover .legend-color,
+.legend-item:hover .legend-circle {
+  transform: scale(1.1);
+  transition: transform 0.2s ease;
+}
+
+.legend-item:hover .legend-label {
+  font-weight: 500;
+}
+
+/* Cluster item specific styles */
+.legend-item.cluster .legend-circle {
+  position: relative;
+}
+
+.legend-item.cluster .legend-circle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  background: white;
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .map-legend {
+    bottom: 20px;
+    right: 20px;
+    max-width: calc(100% - 40px);
+  }
+} 

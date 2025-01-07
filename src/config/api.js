@@ -1,70 +1,33 @@
-// API Configuration
+// API configuration
 export const API_CONFIG = {
-  census: {
-    baseUrl: 'https://api.census.gov/data',
-    token: import.meta.env.VITE_CENSUS_API_KEY
-  },
-  nrel: {
-    baseUrl: 'https://developer.nrel.gov/api/pvwatts/v6',
-    token: import.meta.env.VITE_NREL_API_KEY
-  },
-  openWeather: {
-    baseUrl: 'https://api.openweathermap.org/data/2.5',
-    token: import.meta.env.VITE_OPENWEATHER_API_KEY
-  },
-  regrid: {
-    baseUrl: 'https://app.regrid.com/api/v1',
-    token: import.meta.env.VITE_REGRID_API_KEY
-  }
+  baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+  timeout: 10000,
+  retryAttempts: 3
 };
 
-// Cache durations in milliseconds
-export const CACHE_CONFIG = {
-  censusData: {
-    duration: 24 * 60 * 60 * 1000 // 24 hours
-  },
-  weatherData: {
-    duration: 30 * 60 * 1000 // 30 minutes
-  },
-  solarData: {
-    duration: 7 * 24 * 60 * 60 * 1000 // 7 days
-  },
-  propertyData: {
-    duration: 24 * 60 * 60 * 1000 // 24 hours
+// Error handling utility
+export const handleApiError = (error, context = '') => {
+  if (error.response) {
+    // The request was made and the server responded with a status code
+    // that falls out of the range of 2xx
+    console.error(`${context} API Error:`, {
+      status: error.response.status,
+      data: error.response.data,
+      headers: error.response.headers
+    });
+  } else if (error.request) {
+    // The request was made but no response was received
+    console.error(`${context} Network Error:`, error.request);
+  } else {
+    // Something happened in setting up the request that triggered an Error
+    console.error(`${context} Request Setup Error:`, error.message);
   }
-};
 
-// API Headers
-export const getHeaders = (service) => {
-  const headers = {
-    'Content-Type': 'application/json'
+  // Return a standardized error object
+  return {
+    error: true,
+    message: error.response?.data?.message || error.message || 'An unexpected error occurred',
+    status: error.response?.status || 500,
+    context
   };
-
-  switch (service) {
-    case 'census':
-      headers['X-Census-Key'] = API_CONFIG.census.token;
-      break;
-    case 'nrel':
-      headers['X-Api-Key'] = API_CONFIG.nrel.token;
-      break;
-    case 'openWeather':
-      headers['X-Api-Key'] = API_CONFIG.openWeather.token;
-      break;
-    case 'regrid':
-      headers['Authorization'] = `Bearer ${API_CONFIG.regrid.token}`;
-      break;
-    default:
-      break;
-  }
-
-  return headers;
-};
-
-// Error handling
-export const handleApiError = (error, service) => {
-  console.error(`${service} API Error:`, {
-    message: error.message,
-    status: error.response?.status,
-    data: error.response?.data
-  });
 }; 

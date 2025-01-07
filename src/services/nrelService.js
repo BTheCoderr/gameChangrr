@@ -1,155 +1,140 @@
-import axios from 'axios'
+import { API_CONFIG, handleApiError } from '../config/api';
+import axios from 'axios';
 
-const NREL_API_KEY = import.meta.env.VITE_NREL_API_KEY;
-const BASE_URL = 'https://developer.nrel.gov/api/pvwatts/v6';
+// Cache duration in milliseconds (24 hours)
+const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
-// Cache for solar data
-const solarCache = new Map();
-const CACHE_DURATION = 86400000; // 24 hours in milliseconds
+// Simple in-memory cache
+const cache = new Map();
 
-// Mock data for testing
-const MOCK_SOLAR_DATA = {
-  annualOutput: 6000,
-  monthlyOutput: [
-    400, 450, 500, 550, 600, 650,
-    650, 600, 550, 500, 450, 400
-  ],
-  capacityFactor: 0.15,
-  performanceRatio: 0.75,
-  solradAnnual: 5.2,
-  solradMonthly: [
-    3.8, 4.2, 4.8, 5.2, 5.6, 5.8,
-    5.8, 5.6, 5.2, 4.8, 4.2, 3.8
-  ]
+const isCacheValid = (cacheEntry) => {
+  return cacheEntry && (Date.now() - cacheEntry.timestamp) < CACHE_DURATION;
 };
 
-/**
- * Get solar potential data for a location
- * @param {number} lat - Latitude
- * @param {number} lon - Longitude
- * @param {number} systemCapacity - System capacity in kW
- * @param {string} moduleType - Module type (0=Standard, 1=Premium, 2=Thin film)
- * @param {number} arrayType - Array type (0=Fixed open rack, 1=Fixed roof mount, 2=1-axis tracking, 3=1-axis backtracking, 4=2-axis tracking)
- * @param {number} tilt - Array tilt angle in degrees
- * @param {number} azimuth - Array azimuth angle in degrees (180=south)
- * @param {boolean} useTestData - Whether to use test data instead of making API calls
- * @returns {Promise<Object>} Solar potential data
- */
-export const getSolarPotential = async (
-  lat,
-  lon,
-  systemCapacity = 4,
-  moduleType = 0,
-  arrayType = 1,
-  tilt = 20,
-  azimuth = 180,
-  useTestData = true // Default to test data until live access is granted
-) => {
-  // Return mock data if in test mode
-  if (useTestData) {
-    // Scale mock data based on system capacity
-    const scaleFactor = systemCapacity / 4; // Base mock data is for 4kW system
-    return {
-      ...MOCK_SOLAR_DATA,
-      annualOutput: MOCK_SOLAR_DATA.annualOutput * scaleFactor,
-      monthlyOutput: MOCK_SOLAR_DATA.monthlyOutput.map(output => output * scaleFactor)
-    };
-  }
+// Mock solar installation data
+const mockSolarData = {
+  type: 'FeatureCollection',
+  features: Array.from({ length: 50 }, (_, i) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      // Generate random coordinates in Massachusetts
+      coordinates: [
+        -72.5 + Math.random() * 2, // Longitude between -72.5 and -70.5
+        42 + Math.random() * 1 // Latitude between 42 and 43
+      ]
+    },
+    properties: {
+      id: `PV${i + 1}`,
+      systemSize: 5 + Math.random() * 10, // 5-15 kW
+      cost: Math.round((15000 + Math.random() * 20000) * 100) / 100, // $15k-35k
+      installationDate: new Date(2020 + Math.floor(Math.random() * 4), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
+      annualGeneration: Math.round((6000 + Math.random() * 4000) * 100) / 100, // 6000-10000 kWh
+      moduleType: Math.random() > 0.5 ? 'Standard' : 'Premium',
+      arrayType: ['Fixed - Roof Mounted', 'Fixed - Ground Mounted', 'Single Axis', 'Dual Axis'][Math.floor(Math.random() * 4)],
+      efficiency: Math.round((15 + Math.random() * 5) * 100) / 100 // 15-20%
+    }
+  }))
+};
 
-  const cacheKey = `solar_${lat}_${lon}_${systemCapacity}_${moduleType}_${arrayType}_${tilt}_${azimuth}`;
-  const cachedData = solarCache.get(cacheKey);
+export const fetchOpenPVData = async (bounds) => {
+  const cacheKey = `openpv-${bounds.north}-${bounds.south}-${bounds.east}-${bounds.west}`;
   
-  if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
+  // Check cache first
+  const cachedData = cache.get(cacheKey);
+  if (isCacheValid(cachedData)) {
     return cachedData.data;
   }
 
   try {
-    const response = await axios.get(BASE_URL, {
-      params: {
-        api_key: NREL_API_KEY,
-        lat,
-        lon,
-        system_capacity: systemCapacity,
-        module_type: moduleType,
-        array_type: arrayType,
-        tilt,
-        azimuth,
-        dataset: 'tmy3',
-        timeframe: 'monthly'
+    // Try to fetch from NREL API if API key is available
+    if (import.meta.env.VITE_NREL_API_KEY) {
+      const response = await axios.get('https://developer.nrel.gov/api/solar/openpv/v3/installations', {
+        params: {
+          api_key: import.meta.env.VITE_NREL_API_KEY,
+          bbox: `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
+          format: 'json',
+          limit: 100
+        }
+      });
+
+      if (response.data && response.data.outputs) {
+        const geojsonData = {
+          type: 'FeatureCollection',
+          features: response.data.outputs.map(installation => ({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [installation.longitude, installation.latitude]
+            },
+            properties: {
+              id: installation.installation_id,
+              systemSize: installation.size_kw,
+              cost: installation.cost,
+              installationDate: installation.install_date,
+              annualGeneration: installation.annual_generation,
+              moduleType: installation.module_type,
+              arrayType: installation.array_type,
+              efficiency: installation.efficiency
+            }
+          }))
+        };
+
+        // Update cache
+        cache.set(cacheKey, {
+          data: geojsonData,
+          timestamp: Date.now()
+        });
+
+        return geojsonData;
       }
-    });
-
-    const solarData = {
-      annualOutput: response.data.outputs.ac_annual,
-      monthlyOutput: response.data.outputs.ac_monthly,
-      capacityFactor: response.data.outputs.capacity_factor,
-      performanceRatio: response.data.outputs.performance_ratio,
-      solradAnnual: response.data.outputs.solrad_annual,
-      solradMonthly: response.data.outputs.solrad_monthly
-    };
-
-    solarCache.set(cacheKey, {
-      data: solarData,
-      timestamp: Date.now()
-    });
-
-    return solarData;
+    }
   } catch (error) {
-    console.error('Error fetching solar potential data:', error);
-    // Fall back to mock data if API call fails
-    return MOCK_SOLAR_DATA;
+    console.warn('Failed to fetch NREL OpenPV data:', error.message);
+    handleApiError(error, 'NREL OpenPV');
   }
-};
 
-/**
- * Get system size recommendation based on roof area
- * @param {number} roofArea - Available roof area in square feet
- * @param {number} efficiency - Module efficiency (default: 0.2 or 20%)
- * @returns {Object} Recommended system size and estimated production
- */
-export const getSystemSizeRecommendation = (roofArea, efficiency = 0.2) => {
-  // Typical solar panel is about 17.5 square feet
-  const panelArea = 17.5;
-  const numberOfPanels = Math.floor(roofArea / panelArea);
-  
-  // Typical panel produces about 300W at STC
-  const wattsPerPanel = 300;
-  const systemSizeKW = (numberOfPanels * wattsPerPanel) / 1000;
-  
+  // Fall back to mock data
+  console.log('Using mock OpenPV data');
   return {
-    recommendedSize: systemSizeKW,
-    numberOfPanels,
-    estimatedArea: numberOfPanels * panelArea,
-    estimatedAnnualProduction: systemSizeKW * 1200 // Rough estimate: 1,200 kWh per kW of installed capacity
+    ...mockSolarData,
+    features: mockSolarData.features.filter(feature => {
+      const [lng, lat] = feature.geometry.coordinates;
+      return lng >= bounds.west && lng <= bounds.east && 
+             lat >= bounds.south && lat <= bounds.north;
+    })
   };
 };
 
-/**
- * Calculate potential savings from solar installation
- * @param {number} annualProduction - Annual energy production in kWh
- * @param {number} electricityRate - Electricity rate in $/kWh
- * @param {number} systemCost - Total system cost in dollars
- * @param {number} incentiveRate - Federal and state incentive rate as decimal (e.g., 0.3 for 30%)
- * @returns {Object} Financial metrics including payback period and ROI
- */
-export const calculateSolarSavings = (
-  annualProduction,
-  electricityRate = 0.13,
-  systemCost = 20000,
-  incentiveRate = 0.3
-) => {
-  const annualSavings = annualProduction * electricityRate;
-  const incentives = systemCost * incentiveRate;
-  const netCost = systemCost - incentives;
-  const paybackPeriod = netCost / annualSavings;
-  const roi = (annualSavings * 25 - netCost) / netCost * 100; // 25-year ROI
-
-  return {
-    annualSavings,
-    totalIncentives: incentives,
-    netSystemCost: netCost,
-    paybackPeriod,
-    roi,
-    lifetimeSavings: annualSavings * 25 // Assuming 25-year system life
-  };
+export const getSolarStats = async (bounds) => {
+  try {
+    const response = await axios.get(`${API_CONFIG.baseUrl}/solar/stats`, {
+      params: bounds
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching solar statistics:', error);
+    handleApiError(error, 'Solar Statistics');
+    
+    // Return mock stats
+    return {
+      totalInstallations: 250,
+      totalCapacity: 1875.5,
+      averageSystemSize: 7.5,
+      averageCost: 25000,
+      monthlyInstallations: [
+        { month: '2023-07', count: 18 },
+        { month: '2023-08', count: 22 },
+        { month: '2023-09', count: 25 },
+        { month: '2023-10', count: 28 },
+        { month: '2023-11', count: 30 },
+        { month: '2023-12', count: 24 }
+      ],
+      systemTypes: {
+        residential: 0.75,
+        commercial: 0.20,
+        utility: 0.05
+      }
+    };
+  }
 }; 

@@ -1,168 +1,212 @@
-const CACHE_DURATION = {
-  SHORT: 5 * 60 * 1000, // 5 minutes
-  MEDIUM: 30 * 60 * 1000, // 30 minutes
-  LONG: 24 * 60 * 60 * 1000 // 24 hours
-};
-
-const PREFERENCES_KEY = 'gamechangrr_preferences';
-const LAYER_CACHE_PREFIX = 'layer_cache_';
+// Cache configuration from environment variables
+const DEFAULT_TTL = parseInt(process.env.REACT_APP_CACHE_TTL) || 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = parseInt(process.env.REACT_APP_CACHE_MAX_SIZE) || 1000;
 
 class CacheManager {
   constructor() {
-    this.cache = new Map();
-    this.cleanupInterval = setInterval(() => this.cleanup(), CACHE_DURATION.MEDIUM);
-    this.loadPreferences();
+    this.caches = new Map();
   }
 
-  generateKey(type, bounds, filters = {}) {
-    const boundsKey = bounds ? bounds.join(',') : 'all';
-    const filtersKey = Object.entries(filters)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => `${key}:${JSON.stringify(value)}`)
-      .join('|');
-    return `${type}:${boundsKey}:${filtersKey}`;
-  }
+  // Initialize a new cache store with configuration
+  initializeCache(storeName, config = {}) {
+    if (this.caches.has(storeName)) {
+      return;
+    }
 
-  set(type, bounds, filters, data, duration = CACHE_DURATION.SHORT) {
-    const key = this.generateKey(type, bounds, filters);
-    this.cache.set(key, {
-      data,
-      expires: Date.now() + duration
+    this.caches.set(storeName, {
+      data: new Map(),
+      config: {
+        ttl: config.ttl || DEFAULT_TTL,
+        maxSize: config.maxSize || MAX_CACHE_SIZE,
+        ...config
+      }
     });
   }
 
-  get(type, bounds, filters) {
-    const key = this.generateKey(type, bounds, filters);
-    const cached = this.cache.get(key);
-    
-    if (!cached) return null;
-    if (cached.expires <= Date.now()) {
-      this.cache.delete(key);
+  // Get an item from cache
+  get(storeName, key) {
+    this.ensureCacheExists(storeName);
+    const cache = this.caches.get(storeName);
+    const item = cache.data.get(this.getCacheKey(key));
+
+    if (!item) {
       return null;
     }
-    
-    return cached.data;
+
+    if (this.isExpired(item)) {
+      this.delete(storeName, key);
+      return null;
+    }
+
+    return item.value;
   }
 
-  cleanup() {
-    const now = Date.now();
-    for (const [key, value] of this.cache.entries()) {
-      if (value.expires <= now) {
-        this.cache.delete(key);
+  // Set an item in cache
+  set(storeName, key, value, ttl) {
+    this.ensureCacheExists(storeName);
+    const cache = this.caches.get(storeName);
+    const cacheKey = this.getCacheKey(key);
+
+    // Enforce cache size limit
+    if (cache.data.size >= cache.config.maxSize) {
+      this.evictOldest(storeName);
+    }
+
+    cache.data.set(cacheKey, {
+      value,
+      timestamp: Date.now(),
+      ttl: ttl || cache.config.ttl
+    });
+
+    return true;
+  }
+
+  // Delete an item from cache
+  delete(storeName, key) {
+    this.ensureCacheExists(storeName);
+    return this.caches.get(storeName).data.delete(this.getCacheKey(key));
+  }
+
+  // Clear entire cache store
+  clear(storeName) {
+    this.ensureCacheExists(storeName);
+    this.caches.get(storeName).data.clear();
+  }
+
+  // Get all cached items in a store
+  getAll(storeName) {
+    this.ensureCacheExists(storeName);
+    const cache = this.caches.get(storeName);
+    const result = new Map();
+
+    for (const [key, item] of cache.data.entries()) {
+      if (!this.isExpired(item)) {
+        result.set(key, item.value);
+      } else {
+        this.delete(storeName, key);
       }
     }
+
+    return result;
   }
 
-  clear() {
-    this.cache.clear();
-  }
+  // Check if key exists in cache
+  has(storeName, key) {
+    this.ensureCacheExists(storeName);
+    const cache = this.caches.get(storeName);
+    const item = cache.data.get(this.getCacheKey(key));
 
-  // User preferences management
-  loadPreferences() {
-    try {
-      const saved = localStorage.getItem(PREFERENCES_KEY);
-      this.preferences = saved ? JSON.parse(saved) : this.getDefaultPreferences();
-    } catch (error) {
-      console.error('Error loading preferences:', error);
-      this.preferences = this.getDefaultPreferences();
+    if (!item) {
+      return false;
     }
+
+    if (this.isExpired(item)) {
+      this.delete(storeName, key);
+      return false;
+    }
+
+    return true;
   }
 
-  getDefaultPreferences() {
-    return {
-      layers: {
-        moveIns: false,
-        solarPermits: false,
-        utilityBoundaries: false,
-        evStations: false
-      },
-      filters: {
-        solarPermits: {
-          dateRange: [null, null],
-          capacityRange: [0, 50],
-          status: 'all',
-          hasBattery: false,
-          showExpired: true,
-          showBankrupt: true
-        },
-        moveIns: {
-          dateRange: [null, null],
-          propertyType: 'all',
-          priceRange: [0, 1000000]
-        }
-      },
-      mapStyle: 'satellite',
-      layerOpacities: {
-        'solar-permits': 1,
-        'utility-boundaries': 0.7,
-        'move-ins': 1,
-        'ev-stations': 1
+  // Get cache size
+  size(storeName) {
+    this.ensureCacheExists(storeName);
+    return this.caches.get(storeName).data.size;
+  }
+
+  // Get cache statistics
+  getStats(storeName) {
+    this.ensureCacheExists(storeName);
+    const cache = this.caches.get(storeName);
+    const stats = {
+      size: cache.data.size,
+      maxSize: cache.config.maxSize,
+      ttl: cache.config.ttl,
+      expired: 0,
+      valid: 0
+    };
+
+    for (const item of cache.data.values()) {
+      if (this.isExpired(item)) {
+        stats.expired++;
+      } else {
+        stats.valid++;
       }
-    };
+    }
+
+    return stats;
   }
 
-  savePreferences(preferences) {
-    try {
-      localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
-      this.preferences = preferences;
-    } catch (error) {
-      console.error('Error saving preferences:', error);
+  // Helper methods
+  private ensureCacheExists(storeName) {
+    if (!this.caches.has(storeName)) {
+      this.initializeCache(storeName);
     }
   }
 
-  getPreferences() {
-    return this.preferences;
+  private getCacheKey(key) {
+    if (typeof key === 'string') {
+      return key;
+    }
+    return JSON.stringify(key);
   }
 
-  updatePreferences(updates) {
-    const newPreferences = {
-      ...this.preferences,
-      ...updates
-    };
-    this.savePreferences(newPreferences);
-    return newPreferences;
+  private isExpired(item) {
+    return Date.now() - item.timestamp > item.ttl;
   }
 
-  destroy() {
-    clearInterval(this.cleanupInterval);
-    this.cache.clear();
+  private evictOldest(storeName) {
+    const cache = this.caches.get(storeName);
+    let oldestKey = null;
+    let oldestTimestamp = Infinity;
+
+    for (const [key, item] of cache.data.entries()) {
+      if (item.timestamp < oldestTimestamp) {
+        oldestTimestamp = item.timestamp;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      cache.data.delete(oldestKey);
+    }
   }
 }
 
-const cacheManager = new CacheManager();
+// Create and export singleton instance
+export const cacheManager = new CacheManager();
 
-export const cacheData = (type, bounds, filters, data, duration) => {
-  cacheManager.set(type, bounds, filters, data, duration);
-};
+// Initialize common cache stores
+cacheManager.initializeCache('utilityData', {
+  ttl: 30 * 60 * 1000 // 30 minutes
+});
 
-export const getCachedData = (type, bounds, filters) => {
-  return cacheManager.get(type, bounds, filters);
-};
+cacheManager.initializeCache('leadScores', {
+  ttl: 15 * 60 * 1000 // 15 minutes
+});
 
-export const clearCache = () => {
-  cacheManager.clear();
-};
+cacheManager.initializeCache('solarData', {
+  ttl: 60 * 60 * 1000 // 1 hour
+});
 
-export const saveUserPreferences = (preferences) => {
-  return cacheManager.savePreferences(preferences);
-};
+// Export cache decorator for class methods
+export function cached(storeName, keyGenerator) {
+  return function (target, propertyKey, descriptor) {
+    const originalMethod = descriptor.value;
 
-export const loadUserPreferences = () => {
-  return cacheManager.getPreferences();
-};
+    descriptor.value = async function (...args) {
+      const key = keyGenerator ? keyGenerator.apply(this, args) : args[0];
+      const cachedResult = cacheManager.get(storeName, key);
 
-export const updateUserPreferences = (updates) => {
-  return cacheManager.updatePreferences(updates);
-};
+      if (cachedResult !== null) {
+        return cachedResult;
+      }
 
-export const getCacheDuration = (type) => {
-  switch (type) {
-    case 'utility-boundaries':
-      return CACHE_DURATION.LONG;
-    case 'solar-permits':
-    case 'move-ins':
-      return CACHE_DURATION.MEDIUM;
-    default:
-      return CACHE_DURATION.SHORT;
-  }
-}; 
+      const result = await originalMethod.apply(this, args);
+      cacheManager.set(storeName, key, result);
+      return result;
+    };
+
+    return descriptor;
+  };
+} 

@@ -44,3 +44,41 @@ yarn-error.log*
 
 # Yarn Integrity file
 .yarn-integrity
+
+# API keys and secrets
+**/config/secrets.js
+**/config/keys.js
+**/.env.*
+
+# Cache directories
+.cache/
+**/cache/
+**/.cache/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# System files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Debug files
+debug.log
+debug/
+
+# Local development
+*.local
+local.settings.json
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Energy Star API credentials
+**/config/energystar.json
+**/energystar-credentials.json

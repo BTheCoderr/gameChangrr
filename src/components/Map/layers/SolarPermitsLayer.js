@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { fetchSolarInstallations } from '../../../services/gamechangrrService';
 
@@ -13,11 +14,15 @@ export class SolarPermitsLayer {
     };
     this.visible = true;
     this.opacity = 1;
+    this.clusterProperties = {
+      sum_capacity: ['+', ['get', 'capacity']],
+      avg_capacity: ['/', ['get', 'sum_capacity'], ['get', 'point_count']]
+    };
   }
 
   initialize() {
     try {
-      // Add clustered source
+      // Add clustered source with optimized properties
       this.map.addSource(this.sourceId, {
         type: 'geojson',
         data: {
@@ -27,10 +32,14 @@ export class SolarPermitsLayer {
         cluster: true,
         clusterMaxZoom: 14,
         clusterRadius: 50,
-        generateId: true
+        clusterProperties: this.clusterProperties,
+        generateId: true,
+        maxzoom: 16,
+        buffer: 128,
+        tolerance: 0.5
       });
 
-      // Add clusters layer
+      // Add clusters layer with dynamic styling
       this.map.addLayer({
         id: this.layerIds.clusters,
         type: 'circle',
@@ -47,32 +56,45 @@ export class SolarPermitsLayer {
             '#0D47A1' // 100+ points
           ],
           'circle-radius': [
-            'step',
+            'interpolate',
+            ['linear'],
             ['get', 'point_count'],
-            20, // 0-19 points
-            20,
-            25, // 20-99 points
-            100,
-            30 // 100+ points
+            0, 15,
+            20, 20,
+            100, 25,
+            500, 30
           ],
-          'circle-opacity': 0.8,
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 16, 0.9],
           'circle-stroke-width': 2,
           'circle-stroke-color': '#FFFFFF',
-          'circle-stroke-opacity': 0.5
+          'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.3, 16, 0.5]
         }
       });
 
-      // Add cluster count labels
+      // Add cluster count labels with dynamic sizing
       this.map.addLayer({
         id: this.layerIds.clusterCount,
         type: 'symbol',
         source: this.sourceId,
         filter: ['has', 'point_count'],
         layout: {
-          'text-field': '{point_count_abbreviated}',
+          'text-field': [
+            'concat',
+            ['to-string', ['get', 'point_count_abbreviated']],
+            '\n',
+            ['number-format', ['get', 'avg_capacity'], { 'min-fraction-digits': 1, 'max-fraction-digits': 1 }],
+            ' kW avg'
+          ],
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 14,
-          'text-allow-overlap': true
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            7, 10,
+            16, 14
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': false
         },
         paint: {
           'text-color': '#FFFFFF',
@@ -81,7 +103,7 @@ export class SolarPermitsLayer {
         }
       });
 
-      // Add unclustered points layer
+      // Add unclustered points layer with dynamic styling
       this.map.addLayer({
         id: this.layerIds.unclusteredPoints,
         type: 'circle',
@@ -104,14 +126,14 @@ export class SolarPermitsLayer {
             15, 8,
             20, 12
           ],
-          'circle-opacity': 0.8,
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.7, 16, 0.9],
           'circle-stroke-width': 1.5,
           'circle-stroke-color': '#FFFFFF',
-          'circle-stroke-opacity': 0.8
+          'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 16, 0.8]
         }
       });
 
-      // Add text labels for unclustered points (visible only when zoomed in)
+      // Add text labels for unclustered points with dynamic visibility
       this.map.addLayer({
         id: this.layerIds.labels,
         type: 'symbol',
@@ -120,7 +142,13 @@ export class SolarPermitsLayer {
         layout: {
           'text-field': ['get', 'address'],
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 11,
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            14, 10,
+            16, 12
+          ],
           'text-offset': [0, 1.5],
           'text-anchor': 'top',
           'text-allow-overlap': false,
@@ -302,4 +330,23 @@ export class SolarPermitsLayer {
       this.map.removeSource(this.sourceId);
     }
   }
-} 
+}
+
+// React hook for using the layer
+export const useSolarPermitsLayer = (map, data, options = {}) => {
+  const layer = useCallback(() => new SolarPermitsLayer(map), [map]);
+
+  useEffect(() => {
+    if (!map || !data) return;
+
+    const solarPermitsLayer = layer();
+    solarPermitsLayer.initialize();
+    solarPermitsLayer.loadData(data);
+
+    return () => {
+      solarPermitsLayer.cleanup();
+    };
+  }, [map, data, layer]);
+
+  return layer;
+}; 

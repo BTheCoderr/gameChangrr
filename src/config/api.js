@@ -6,6 +6,9 @@ export const API_CONFIG = {
   regridBaseUrl: import.meta.env.VITE_REGRID_API_URL,
   openWeatherBaseUrl: 'https://api.openweathermap.org/data/3.0',
   GAMECHANGRR_API: import.meta.env.VITE_GAMECHANGRR_API_URL || 'http://localhost:3000/api',
+  nrel: {
+    token: import.meta.env.VITE_NREL_API_KEY
+  },
   timeout: 10000,
   retryAttempts: 3,
   rateLimits: {

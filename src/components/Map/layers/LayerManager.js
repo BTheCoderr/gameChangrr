@@ -26,6 +26,14 @@ export class LayerManager {
 
   async initialize() {
     try {
+      // Clean up any existing layers first
+      Object.values(this.layers).forEach(layer => {
+        if (layer && typeof layer.cleanup === 'function') {
+          layer.cleanup();
+        }
+      });
+
+      // Initialize each layer
       for (const layer of Object.values(this.layers)) {
         if (layer && typeof layer.initialize === 'function') {
           await layer.initialize();
@@ -33,6 +41,7 @@ export class LayerManager {
       }
     } catch (error) {
       console.error('Error initializing layers:', error);
+      throw error;
     }
   }
 
@@ -57,5 +66,13 @@ export class LayerManager {
 
   getLayer(layerId) {
     return this.layers[layerId];
+  }
+
+  cleanup() {
+    Object.values(this.layers).forEach(layer => {
+      if (layer && typeof layer.cleanup === 'function') {
+        layer.cleanup();
+      }
+    });
   }
 } 

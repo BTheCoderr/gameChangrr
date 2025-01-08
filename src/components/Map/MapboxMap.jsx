@@ -12,7 +12,7 @@ import {
   fetchUtilityBoundaries,
   fetchEVStations
 } from '../../services/gamechangrrService';
-import { fetchPropertyBoundaries } from '../../services/propertyService';
+import { fetchProperties } from '../../services/propertyService';
 import { fetchCityBoundaries } from '../../services/boundaryService';
 import { API_CONFIG } from '../../config/api';
 import MapControls from './MapControls';
@@ -25,11 +25,7 @@ import { cacheData, getCachedData } from '../../utils/cache';
 import { LayerManager } from './layers/LayerManager';
 
 // Ensure Mapbox token is set
-if (!import.meta.env.VITE_MAPBOX_TOKEN) {
-  console.error('Mapbox token is missing! Please add VITE_MAPBOX_TOKEN to your .env file');
-}
-
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+mapboxgl.accessToken = "pk.eyJ1IjoiYmZlcnJlbGw1MTQiLCJhIjoiY200ajY5ZXdyMGFyMTJqcTAyMXplYTJjYiJ9.5yoWGtPOPInX9rUBRCI5Iw";
 
 const MAP_STYLES = {
   satellite: {
@@ -425,279 +421,40 @@ const MapboxMap = () => {
   };
 
   const initializeLayers = (map) => {
-    if (!map) {
-      console.error('Map not initialized');
-      return;
-    }
-
     console.log('Initializing map layers...');
-
-    try {
-      // Initialize all sources first with empty GeoJSON
-      const emptyGeojson = { type: 'FeatureCollection', features: [] };
+    
+    // Initialize layer manager first
+    layerManager.current = new LayerManager(map);
+    layerManager.current.initialize();
+    
+    // Wait for layers to be initialized before setting visibility
+    map.once('idle', () => {
+      // Only set visibility for implemented layers
+      const implementedLayers = [
+        'moveIns',
+        'cityBoundaries',
+        'solarPotential',
+        'utilityBoundaries',
+        'solarPermits',
+        'evStations',
+        'evStationsHeatmap',
+        'demographicsChoropleth',
+        'roofPermits',
+        'hvacPermits',
+        'poolPermits'
+      ];
       
-      const sources = {
-        'solar-permits': {
-          type: 'geojson',
-          data: emptyGeojson,
-          cluster: true,
-          clusterMaxZoom: 14,
-          clusterRadius: 50,
-          maxzoom: 16,
-          generateId: true
-        },
-        'utility-boundaries': {
-          type: 'geojson',
-          data: emptyGeojson
-        },
-        'city-boundaries': {
-          type: 'geojson',
-          data: emptyGeojson
-        },
-        'neighborhoods': {
-          type: 'geojson',
-          data: emptyGeojson
-        },
-        'ev-stations': {
-          type: 'geojson',
-          data: emptyGeojson,
-          cluster: true,
-          clusterMaxZoom: 14,
-          clusterRadius: 50
-        }
-      };
-
-      // Add all sources first
-      Object.entries(sources).forEach(([id, source]) => {
-        if (!map.getSource(id)) {
-          console.log(`Adding source: ${id}`);
-          map.addSource(id, source);
-        }
-      });
-
-      // Wait for sources to be added
-      map.once('idle', () => {
-        // Define all layers
-        const layerConfigs = {
-          'solar-permits': [
-            {
-              id: 'clusters-solar-permits',
-              type: 'circle',
-              source: 'solar-permits',
-              filter: ['has', 'point_count'],
-              paint: {
-                'circle-color': [
-                  'step',
-                  ['get', 'point_count'],
-                  '#ffb74d',
-                  20, '#ff9800',
-                  50, '#f57c00'
-                ],
-                'circle-radius': [
-                  'step',
-                  ['get', 'point_count'],
-                  20,
-                  20, 30,
-                  50, 40
-                ]
-              }
-            },
-            {
-              id: 'cluster-count-solar-permits',
-              type: 'symbol',
-              source: 'solar-permits',
-              filter: ['has', 'point_count'],
-              layout: {
-                'text-field': '{point_count_abbreviated}',
-                'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-                'text-size': 12
-              },
-              paint: {
-                'text-color': '#ffffff'
-              }
-            },
-            {
-              id: 'unclustered-solar-permits',
-              type: 'circle',
-              source: 'solar-permits',
-              filter: ['!', ['has', 'point_count']],
-              paint: {
-                'circle-radius': [
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  12, 4,
-                  16, 6,
-                  18, 8
-                ],
-                'circle-color': '#ff9900',
-                'circle-stroke-width': 1.5,
-                'circle-stroke-color': '#ffffff',
-                'circle-opacity': 0.9
-              }
-            }
-          ],
-          'utility-boundaries': [
-            {
-              id: 'utility-boundaries-layer',
-              type: 'fill',
-              source: 'utility-boundaries',
-              paint: {
-                'fill-color': '#4a90e2',
-                'fill-opacity': 0.2,
-                'fill-outline-color': '#4a90e2'
-              }
-            }
-          ],
-          'city-boundaries': [
-            {
-              id: 'city-boundaries-layer',
-              type: 'fill',
-              source: 'city-boundaries',
-              paint: {
-                'fill-color': '#2196F3',
-                'fill-opacity': 0.2,
-                'fill-outline-color': '#1976D2'
-              }
-            }
-          ],
-          'neighborhoods': [
-            {
-              id: 'neighborhoods-layer',
-              type: 'fill',
-              source: 'neighborhoods',
-              paint: {
-                'fill-color': '#088',
-                'fill-opacity': 0.2,
-                'fill-outline-color': '#088'
-              }
-            }
-          ]
-        };
-
-        // Add all layers
-        Object.entries(layerConfigs).forEach(([sourceId, layers]) => {
-          layers.forEach(layer => {
-            if (!map.getLayer(layer.id)) {
-              console.log(`Adding layer: ${layer.id}`);
-              map.addLayer({
-                ...layer,
-                layout: {
-                  visibility: activeLayers[sourceId.replace('-layer', '')] ? 'visible' : 'none'
-                }
-              });
-            }
-          });
-        });
-
-        // Add interactions for each layer
-        Object.entries(layerConfigs).forEach(([sourceId, layers]) => {
-          layers.forEach(layer => {
-            if (map.getLayer(layer.id)) {
-              addLayerInteractions(map, layer.id, sourceId);
-            }
-          });
-        });
-
-        // Initial data load for visible layers
-        loadMapData();
-
-        console.log('Layers initialized successfully');
-      });
-
-      // Solar data with clustering
-      map.addSource('solar-data', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: []
-        },
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50
-      });
-
-      // Add cluster layers
-      map.addLayer({
-        id: 'clusters',
-        type: 'circle',
-        source: 'solar-data',
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-color': [
-            'step',
-            ['get', 'point_count'],
-            '#51bbd6',
-            100,
-            '#f1f075',
-            750,
-            '#f28cb1'
-          ],
-          'circle-radius': [
-            'step',
-            ['get', 'point_count'],
-            20,
-            100,
-            30,
-            750,
-            40
-          ]
-        }
-      });
-
-      map.addLayer({
-        id: 'cluster-count',
-        type: 'symbol',
-        source: 'solar-data',
-        filter: ['has', 'point_count'],
-        layout: {
-          'text-field': '{point_count_abbreviated}',
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 12
-        }
-      });
-
-      map.addLayer({
-        id: 'unclustered-point',
-        type: 'circle',
-        source: 'solar-data',
-        filter: ['!', ['has', 'point_count']],
-        paint: {
-          'circle-color': '#11b4da',
-          'circle-radius': 8,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#fff'
-        }
-      });
-
-      // Add click handlers for clusters
-      map.on('click', 'clusters', (e) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
-        const clusterId = features[0].properties.cluster_id;
-        map.getSource('solar-data').getClusterExpansionZoom(
-          clusterId,
-          (err, zoom) => {
-            if (err) return;
-
-            map.easeTo({
-              center: features[0].geometry.coordinates,
-              zoom: zoom
-            });
+      // Initialize layer visibility based on activeLayers state
+      Object.entries(activeLayers)
+        .filter(([layerId]) => implementedLayers.includes(layerId))
+        .forEach(([layerId, isVisible]) => {
+          if (layerManager.current) {
+            layerManager.current.setLayerVisibility(layerId, isVisible);
           }
-        );
-      });
-
-      // Change cursor on hover
-      map.on('mouseenter', 'clusters', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'clusters', () => {
-        map.getCanvas().style.cursor = '';
-      });
-
-    } catch (error) {
-      console.error('Error initializing layers:', error);
-    }
+        });
+      
+      setMapLoaded(true);
+    });
   };
 
   const handleStyleChange = (styleId) => {
@@ -830,15 +587,41 @@ const MapboxMap = () => {
 
       map.current.on('load', () => {
         console.log('Map loaded successfully');
-        setMapLoaded(true);
         
-        // Initialize layer manager
+        // Initialize layer manager first
         layerManager.current = new LayerManager(map.current);
         layerManager.current.initialize();
         
-        // Initialize layer visibility based on activeLayers state
-        Object.entries(activeLayers).forEach(([layerId, isVisible]) => {
-          layerManager.current.setLayerVisibility(layerId, isVisible);
+        // Initialize layers
+        initializeLayers(map.current);
+        
+        // Wait for layers to be initialized before setting visibility
+        map.current.once('idle', () => {
+          // Only set visibility for implemented layers
+          const implementedLayers = [
+            'moveIns',
+            'cityBoundaries',
+            'solarPotential',
+            'utilityBoundaries',
+            'solarPermits',
+            'evStations',
+            'evStationsHeatmap',
+            'demographicsChoropleth',
+            'roofPermits',
+            'hvacPermits',
+            'poolPermits'
+          ];
+          
+          // Initialize layer visibility based on activeLayers state
+          Object.entries(activeLayers)
+            .filter(([layerId]) => implementedLayers.includes(layerId))
+            .forEach(([layerId, isVisible]) => {
+              if (layerManager.current) {
+                layerManager.current.setLayerVisibility(layerId, isVisible);
+              }
+            });
+          
+          setMapLoaded(true);
         });
       });
 

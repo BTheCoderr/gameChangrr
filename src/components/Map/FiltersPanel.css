@@ -3,12 +3,15 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 
 .filter-section {
   background: #f8f9fa;
   border-radius: 8px;
   padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .filter-section h3 {
@@ -16,6 +19,8 @@
   font-size: 14px;
   font-weight: 600;
   color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .filter-group {
@@ -43,13 +48,15 @@
   font-size: 13px;
   color: #333;
   background: white;
+  transition: all 0.2s ease;
 }
 
 .filter-group select:focus,
 .filter-group input[type="number"]:focus,
 .filter-group input[type="date"]:focus {
   outline: none;
-  border-color: #4264fb;
+  border-color: #2196F3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 }
 
 .range-inputs {
@@ -82,13 +89,8 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-}
-
-.checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  cursor: pointer;
+  font-size: 13px;
+  color: #333;
 }
 
 /* Custom checkbox styling */
@@ -102,12 +104,12 @@
   outline: none;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .checkbox-label input[type="checkbox"]:checked {
-  background-color: #4264fb;
-  border-color: #4264fb;
+  background-color: #2196F3;
+  border-color: #2196F3;
 }
 
 .checkbox-label input[type="checkbox"]:checked::after {
@@ -123,7 +125,7 @@
 }
 
 .checkbox-label:hover input[type="checkbox"] {
-  border-color: #4264fb;
+  border-color: #2196F3;
 }
 
 /* Select styling */
@@ -153,10 +155,30 @@
   padding: 0;
   margin: 0;
   opacity: 0.6;
+  transition: opacity 0.2s ease;
 }
 
 .filter-group input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
+}
+
+/* Scrollbar styling */
+.filters-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.filters-panel::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.filters-panel::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.filters-panel::-webkit-scrollbar-thumb:hover {
+  background: #666;
 }
 
 /* Responsive adjustments */
@@ -170,5 +192,20 @@
   .range-inputs span,
   .date-inputs span {
     display: none;
+  }
+
+  .filter-section {
+    padding: 12px;
+  }
+
+  .filter-group label {
+    font-size: 12px;
+  }
+
+  .filter-group select,
+  .filter-group input[type="number"],
+  .filter-group input[type="date"] {
+    font-size: 12px;
+    padding: 6px;
   }
 } 

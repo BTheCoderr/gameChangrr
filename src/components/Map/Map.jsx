@@ -2,24 +2,27 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapLegend from './MapLegend';
 import LayerPanel from './LayerPanel';
+import LayersPanel from './LayersPanel';
 import { LayerManager } from './layers/LayerManager';
 import './Map.css';
 
-const Map = ({ onMapLoad }) => {
+const Map = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const layerManager = useRef(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [showLayerManager, setShowLayerManager] = useState(false);
+  
   const [layers, setLayers] = useState({
-    utilityBoundaries: { visible: true, opacity: 0.8 },
-    cityBoundaries: { visible: false, opacity: 0.8 },
+    utilityBoundaries: { visible: false, opacity: 1 },
+    cityBoundaries: { visible: false, opacity: 1 },
     solarPermits: { visible: false, opacity: 1 },
+    solarPotential: { visible: false, opacity: 1 },
+    evStationsHeatmap: { visible: false, opacity: 1 },
+    demographicsChoropleth: { visible: false, opacity: 1 },
     roofPermits: { visible: false, opacity: 1 },
     hvacPermits: { visible: false, opacity: 1 },
-    poolPermits: { visible: false, opacity: 1 },
-    moveIns: { visible: false, opacity: 1 },
-    spanishSpeakers: { visible: false, opacity: 0.8 },
-    evOwners: { visible: false, opacity: 0.8 }
+    poolPermits: { visible: false, opacity: 1 }
   });
 
   useEffect(() => {
@@ -29,23 +32,18 @@ const Map = ({ onMapLoad }) => {
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/light-v11',
       center: [-71.0589, 42.3601],
-      zoom: 9
+      zoom: 12
     });
 
     map.current.on('load', () => {
       layerManager.current = new LayerManager(map.current);
-      layerManager.current.initialize();
-      setMapLoaded(true);
-      if (onMapLoad) onMapLoad(map.current);
+      layerManager.current.initialize().then(() => {
+        setMapLoaded(true);
+      });
     });
 
-    return () => {
-      if (layerManager.current) {
-        layerManager.current.cleanup();
-      }
-      map.current?.remove();
-    };
-  }, [onMapLoad]);
+    return () => map.current?.remove();
+  }, []);
 
   useEffect(() => {
     if (!mapLoaded || !layerManager.current) return;
@@ -70,21 +68,53 @@ const Map = ({ onMapLoad }) => {
     }));
   };
 
+  const handleLayerSettings = (layerId, settings) => {
+    setLayers(prev => ({
+      ...prev,
+      [layerId]: { ...prev[layerId], ...settings }
+    }));
+  };
+
   return (
     <div className="map-container">
       <div ref={mapContainer} className="map" />
       {mapLoaded && (
         <>
-          <LayerPanel
-            layers={layers}
-            onLayerChange={handleLayerChange}
-            onOpacityChange={handleOpacityChange}
+          <div className="map-controls">
+            <LayerPanel
+              layers={layers}
+              onLayerChange={handleLayerChange}
+              onOpacityChange={handleOpacityChange}
+            />
+            <button 
+              className="layer-manager-button"
+              onClick={() => setShowLayerManager(!showLayerManager)}
+            >
+              Advanced Layer Settings
+            </button>
+          </div>
+          
+          {showLayerManager && (
+            <div className="layer-manager-modal">
+              <LayersPanel
+                visible={true}
+                activeLayers={Object.fromEntries(
+                  Object.entries(layers)
+                    .map(([id, settings]) => [id, settings.visible])
+                )}
+                onLayerToggle={(layerId, settings) => handleLayerSettings(layerId, settings)}
+                onClose={() => setShowLayerManager(false)}
+              />
+            </div>
+          )}
+          
+          <MapLegend 
+            activeLayers={Object.fromEntries(
+              Object.entries(layers)
+                .filter(([_, settings]) => settings.visible)
+                .map(([id, _]) => [id, true])
+            )} 
           />
-          <MapLegend activeLayers={Object.fromEntries(
-            Object.entries(layers)
-              .filter(([_, settings]) => settings.visible)
-              .map(([id, _]) => [id, true])
-          )} />
         </>
       )}
     </div>

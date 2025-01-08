@@ -9,9 +9,6 @@
 }
 
 .layer-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
   padding-bottom: 8px;
   border-bottom: 1px solid #eee;
@@ -74,6 +71,7 @@
   padding: 8px;
   border-radius: 4px;
   margin-bottom: 4px;
+  transition: background-color 0.2s ease;
 }
 
 .layer-item:hover {
@@ -100,6 +98,7 @@
 .layer-label {
   font-size: 14px;
   color: #333;
+  text-transform: capitalize;
 }
 
 .layer-tooltip {
@@ -127,6 +126,11 @@
   background: #ddd;
   border-radius: 2px;
   outline: none;
+  transition: background-color 0.2s ease;
+}
+
+.opacity-slider:hover {
+  background: #ccc;
 }
 
 .opacity-slider::-webkit-slider-thumb {
@@ -137,6 +141,13 @@
   background: #2196F3;
   cursor: pointer;
   border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.opacity-slider::-webkit-slider-thumb:hover {
+  background: #1976D2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .opacity-slider::-moz-range-thumb {
@@ -146,6 +157,13 @@
   background: #2196F3;
   cursor: pointer;
   border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.opacity-slider::-moz-range-thumb:hover {
+  background: #1976D2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .opacity-value {

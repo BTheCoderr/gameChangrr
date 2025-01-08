@@ -1,4 +1,4 @@
-# Solar Scout
+# GameChangrr
 
 A comprehensive solar installation and property analysis tool.
 
@@ -15,8 +15,8 @@ A comprehensive solar installation and property analysis tool.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/solar-scout.git
-cd solar-scout
+git clone https://github.com/yourusername/gamechangrr.git
+cd gamechangrr
 ```
 
 2. Install dependencies:

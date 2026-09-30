@@ -1,5 +1,11 @@
 # Game Changer Map Application
 
+<!-- repo-intro:start -->
+**Project snapshot:** Game Changer is a full-stack map-based research tool for layering utility, solar, EV, demographic, and lead data on an interactive Google Maps workspace.
+
+**What it demonstrates:** React/Vite · mapping APIs · Node backend · third-party data integration · geospatial product UX.
+<!-- repo-intro:end -->
+
 A full-stack application that displays various data layers on a Google Maps interface, including utility boundaries, solar permits, EV charging stations, and demographic data.
 
 ## Current Deployment
